@@ -24,7 +24,6 @@ char c_bsd_id[] = "c_bsd.c v2.0 (c) 1988 University of Oulu, Computing Center an
 #include <sys/socket.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
-#include <netinet/in.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <signal.h>
@@ -91,7 +90,6 @@ int portnum;
       }
     server.sin_port = htons(portnum);
     /* End Fix */
-    
     if (connect(sock, (struct sockaddr *) &server, sizeof(server)) < 0) {
       if (StrEq(host, me.sockhost) && tryagain == 1)  /* Is this MY host? */
 	{
@@ -128,7 +126,9 @@ int sock;
   do {
     if (sock < 0 || QuitFlag)
       return(-1);
-    ready.fds_bits[0] = (1 << sock) | 1;
+    FD_ZERO(&ready);
+    FD_SET(sock, &ready);
+    FD_SET(0, &ready);
 #ifdef DOCURSES
     if (termtype == CURSES_TERM) {
       move(LINES-1,i); refresh();
@@ -138,11 +138,11 @@ int sock;
     if (termtype == TERMCAP_TERM)
       move (-1, i);
 #endif
-    if (select(sock+1, &ready, 0, 0, NULL) < 0) {
+    if (select(32, &ready, 0, 0, NULL) < 0) {
 /*      perror("select"); */
       continue;
     }
-    if (ready.fds_bits[0] & (1 << sock)) {
+    if (FD_ISSET(sock, &ready)) {
       if ((size = read(sock, apubuf, STDINBUFSIZE)) < 0)
 	perror("receiving stream packet");
       if (size <= 0) {
@@ -152,7 +152,7 @@ int sock;
       dopacket(&me, apubuf, size);
     }
 #ifndef AUTOMATON
-    if (ready.fds_bits[0] & 1) {
+    if (FD_ISSET(0, &ready)) {
       if ((size = read(0, apubuf, STDINBUFSIZE)) < 0) {
 	putline("FATAL ERROR: End of stdin file !");
 	return -1;

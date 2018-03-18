@@ -98,11 +98,11 @@
  * You must define these to something, even if you don't really want them.
  */
 
-#define SPATH "/usr/local/src/ircd/bin/ircd" /* Where the server lives.  */
-#define CPATH "/usr/local/src/ircd/ircd.conf" /* IRC configuration file.  */
-#define MPATH "/usr/local/src/ircd/ircd.motd" /* message of the day file. */
-#define LPATH "/tmp/ircd7.log" /* Where the debug file lives, if DEBUGMODE */
-#define PPATH "/usr/local/src/ircd/ircd.pid" /* where the server's pid is */
+#define SPATH "/usr/local/bin/ircd" /* Where the server lives.  */
+#define CPATH "/usr/local/lib/ircd.conf" /* IRC configuration file.  */
+#define MPATH "/usr/local/lib/ircd.motd" /* message of the day file. */
+#define LPATH "/tmp/ircd.log" /* Where the debug file lives, if DEBUGMODE */
+#define PPATH "/usr/local/lib/ircd.pid" /* where the server's pid is */
 
 /* ENABLE_SUMMON
  *
@@ -189,7 +189,7 @@
  * Logging will be disable also if you do not define this.
  */
 
-#define FNAME_USERLOG "/usr/local/src/ircd/userlog" /* */
+/*#define FNAME_USERLOG "/usr/local/src/ircd/userlog" /* */
 
 /*
  * define this if you want to use crypted passwords for operators in your
@@ -203,12 +203,12 @@
  * define this if you enable summon and if you want summon to look for the
  * least idle tty a user is logged in on.
  */
-#define LEAST_IDLE
+/* #define LEAST_IDLE /* */
 
 /*
  * Max amount of internal send buffering when socket is stuck (bytes)
  */
-#define MAXSENDQLENGTH 200000    /* Recommended value: 100000 for leaves */
+#define MAXSENDQLENGTH 100000    /* Recommended value: 100000 for leaves */
                                  /*                    200000 for backbones */
 
 /*
@@ -266,7 +266,7 @@
  *	 resident and running - it hardly ever gets swapped to disk! You can
  *	 ignore these recommendations- they only are meant to serve as a guide
  */
-#define NICKNAMEHISTORYLENGTH 350
+#define NICKNAMEHISTORYLENGTH 500
 
 /*
  * WALLOPS : When enabled this will send a broadcast message out to anybody

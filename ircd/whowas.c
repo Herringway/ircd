@@ -17,18 +17,6 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-/*
- * $Id: whowas.c,v 6.1 1991/07/04 21:05:35 gruner stable gruner $
- *
- * $Log: whowas.c,v $
- * Revision 6.1  1991/07/04  21:05:35  gruner
- * Revision 2.6.1 [released]
- *
- * Revision 6.0  1991/07/04  18:05:52  gruner
- * frozen beta revision 2.6.1
- *
- */
-
 /* -- Jto -- 20 Jun 1990
  * extern void free() fixed as suggested by
  * gruner@informatik.tu-muenchen.de
@@ -85,7 +73,7 @@ static int HistoryLength = 0;
 */
 static int MaxHistoryLength = NICKNAMEHISTORYLENGTH;
 
-AddHistory(cptr)
+add_history(cptr)
 aClient *cptr;
     {
 	Reg1 aName *new;
@@ -148,16 +136,17 @@ aClient *cptr;
 		HistoryLength -= 1;
 		free(new);
 	    }
+	return 0;
     }
 
 /*
 ** OffHistory
 **	This is called when client signs off the system.
 */
-OffHistory(cptr)
+off_history(cptr)
 aClient *cptr;
     {
-	AddHistory(cptr);
+	add_history(cptr);
 	if (cptr->history)
 		((aHome *)(cptr->history))->online = NULL;
     }
@@ -168,7 +157,7 @@ aClient *cptr;
 **	nickname within the timelimit. Returns NULL, if no
 **	one found...
 */
-aClient *GetHistory(nick,timelimit)
+aClient *get_history(nick,timelimit)
 char *nick;
 long timelimit;
     {
@@ -229,5 +218,6 @@ char *parv[];
 		    }
 	sendto_one(sptr, ":%s %d %s %s :There was no such nickname",
 		   me.name, ERR_WASNOSUCHNICK, sptr->name, parv[1]);
+	return 0;
     }
 
