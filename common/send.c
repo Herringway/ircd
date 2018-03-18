@@ -23,7 +23,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)send.c	2.27 02 Sep 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)send.c	2.30 07 Nov 1993 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -66,10 +66,17 @@ aClient *to;
 char	*notice;
 {
 	to->flags |= FLAGS_DEADSOCKET;
+	/*
+	 * If because of BUFFERPOOL problem then clean dbuf's now so that
+	 * notices don't hurt operators below.
+	 */
+	DBufClear(&to->recvQ);
+	DBufClear(&to->sendQ);
 #ifndef CLIENT_COMPILE
 	if (notice != (char *)NULL && !IsPerson(to) && !IsUnknown(to) &&
 	    !(to->flags & FLAGS_CLOSING))
 		sendto_ops(notice, get_client_name(to, FALSE));
+	Debug((DEBUG_ERROR, notice, get_client_name(to, FALSE)));
 #endif
 	return -1;
 }
@@ -93,12 +100,12 @@ int	fd;
 
 	if (fd == me.fd)
 	    {
-		for (i = 0; i <= highest_fd; i++)
+		for (i = highest_fd; i >= 0; i--)
 			if ((cptr = local[i]) && DBufLength(&cptr->sendQ) > 0)
 				(void)send_queued(cptr);
 	    }
-	else if (fd >= 0 && local[fd])
-		(void)send_queued(local[fd]);
+	else if (fd >= 0 && (cptr = local[fd]) && DBufLength(&cptr->sendQ) > 0)
+		(void)send_queued(cptr);
 #endif
 }
 #endif
@@ -115,7 +122,7 @@ char	*msg;	/* if msg is a null pointer, we are flushing connection */
 int	len;
 #ifdef SENDQ_ALWAYS
 {
-	if (to->flags & FLAGS_DEADSOCKET)
+	if (IsDead(to))
 		return 0; /* This socket has already been marked as dead */
 # ifdef	CLIENT_COMPILE
 	if (DBufLength(&to->sendQ) > MAXSENDQLENGTH)
@@ -157,7 +164,7 @@ int	len;
 {
 	int	rlen = 0;
 
-	if (to->flags & FLAGS_DEADSOCKET)
+	if (IsDead(to))
 		return 0; /* This socket has already been marked as dead */
 
 	/*
@@ -220,7 +227,7 @@ aClient *to;
 	** Once socket is marked dead, we cannot start writing to it,
 	** even if the error is removed...
 	*/
-	if (to->flags & FLAGS_DEADSOCKET)
+	if (IsDead(to))
 	    {
 		/*
 		** Actually, we should *NEVER* get here--something is
@@ -249,7 +256,7 @@ aClient *to;
 			break;
 	    }
 
-	return (to->flags & FLAGS_DEADSOCKET) ? -1 : 0;
+	return (IsDead(to)) ? -1 : 0;
 }
 
 /*

@@ -32,13 +32,13 @@
  */
 
 #ifndef	lint
-static	char sccsid[] = "@(#)channel.c	2.47 11 Sep 1993 (C) 1990 University of Oulu, Computing\
+static	char sccsid[] = "@(#)channel.c	2.53 07 Nov 1993 (C) 1990 University of Oulu, Computing\
  Center and Jarkko Oikarinen";
 #endif
 
 #include "struct.h"
-#include "sys.h"
 #include "common.h"
+#include "sys.h"
 #include "numeric.h"
 #include "channel.h"
 #include "h.h"
@@ -204,14 +204,14 @@ char	*banid;
 	Reg1 Link **ban;
 	Reg2 Link *tmp;
 
-	if (!chptr || !banid)
+	if (!banid)
 		return -1;
 	for (ban = &(chptr->banlist); *ban; ban = &((*ban)->next))
 		if (mycmp(banid, (*ban)->value.cp)==0)
 		    {
 			tmp = *ban;
 			*ban = tmp->next;
-			(void)free(tmp->value.cp);
+			MyFree(tmp->value.cp);
 			free_link(tmp);
 			break;
 		    }
@@ -264,6 +264,7 @@ int	flags;
 		ptr->value.chptr = chptr;
 		ptr->next = who->user->channel;
 		who->user->channel = ptr;
+		who->user->joined++;
 	    }
 }
 
@@ -288,6 +289,7 @@ aChannel *chptr;
 			free_link(tmp);
 			break;
 		    }
+	sptr->user->joined--;
 	sub1_from_channel(chptr);
 }
 
@@ -432,10 +434,15 @@ char	flag, *chname;
 			sendto_one(cptr, ":%s MODE %s %s %s",
 				   me.name, chname, modebuf, parabuf);
 			send = 0;
-			count = 0;
 			*parabuf = '\0';
 			cp = modebuf;
 			*cp++ = '+';
+			if (count != 3)
+			    {
+				(void)strcpy(parabuf, name);
+				*cp++ = flag;
+			    }
+			count = 0;
 			*cp = '\0';
 		    }
 	    }
@@ -574,8 +581,6 @@ char	*parv[], *mbuf, *pbuf;
 	Mode	*mode, oldm;
 
 	*mbuf = *pbuf = '\0';
-	if (!chptr)
-		return 0;
 	if (parc < 1)
 		return 0;
 
@@ -600,8 +605,6 @@ char	*parv[], *mbuf, *pbuf;
 				break;
 			parv++;
 			*parv = check_string(*parv);
-			if (BadPtr(*parv))
-				break;
 			if (MyClient(sptr) && opcnt >= MAXMODEPARAMS)
 				break;
 			/*
@@ -626,12 +629,11 @@ char	*parv[], *mbuf, *pbuf;
 			** once in the MODE message... --msa
 			*/
 			if (chasing && ischop)
-			    {
 				sendto_one(cptr, ":%s MODE %s %c%c %s",
 					   me.name, chptr->chname,
 					   whatt == MODE_ADD ? '+' : '-',
 					   *curr, who->name);
-			    }
+
 			if (who == cptr && whatt == MODE_ADD && *curr == 'o')
 				break;
 			/*
@@ -668,8 +670,6 @@ char	*parv[], *mbuf, *pbuf;
 			if (keychange)
 				break;
 			*parv = check_string(*parv);
-			if (BadPtr(*parv))
-				break;
 			if (MyClient(sptr) && opcnt >= MAXMODEPARAMS)
 				break;
 			if (!fm)
@@ -687,7 +687,8 @@ char	*parv[], *mbuf, *pbuf;
 				    {
 					lp = &chops[opcnt++];
 					lp->value.cp = *parv;
-					if (strlen(lp->value.cp) > (size_t) KEYLEN)
+					if (strlen(lp->value.cp) >
+					    (size_t) KEYLEN)
 						lp->value.cp[KEYLEN] = '\0';
 					lp->flags = MODE_KEY|MODE_ADD;
 					keychange = 1;
@@ -771,16 +772,8 @@ char	*parv[], *mbuf, *pbuf;
 			break;
 		case 'i' : /* falls through for default case */
 			if (whatt == MODE_DEL)
-			    {
-				Link	**lpp;
-
-				for (lpp = &(chptr->invites); *lpp; )
-				    {
-					lp = *lpp;
-					*lpp = lp->next;
-					free_link(lp);
-				    }
-			    }
+				while (lp = chptr->invites)
+					del_invite(lp->value.cptr, chptr);
 		default:
 			for (ip = flags; *ip; ip += 2)
 				if (*(ip+1) == *curr)
@@ -1109,9 +1102,13 @@ aChannel *chptr;
 	 */
 	if (list_length(cptr->user->invited) >= MAXCHANNELSPERUSER)
 	    {
+/*		This forgets the channel side of invitation     -Vesa
 		inv = cptr->user->invited;
 		cptr->user->invited = inv->next;
 		free_link(inv);
+*/
+		del_invite(cptr, cptr->user->invited->value.chptr);
+ 
 	    }
 	/*
 	 * add client to channel invite list
@@ -1180,7 +1177,7 @@ Reg1	aChannel *chptr;
 		    {
 			obtmp = tmp;
 			tmp = tmp->next;
-			(void)free(obtmp->value.cp);
+			MyFree(obtmp->value.cp);
 			free_link(obtmp);
 		    }
 		if (chptr->prevch)
@@ -1190,7 +1187,7 @@ Reg1	aChannel *chptr;
 		if (chptr->nextch)
 			chptr->nextch->prevch = chptr->prevch;
 		(void)del_from_channel_hash_table(chptr->chname, chptr);
-		(void)free((char *)chptr);
+		MyFree((char *)chptr);
 	    }
 }
 
@@ -1212,7 +1209,7 @@ char	*parv[];
 	int	i, flags = 0;
 	char	*p = NULL, *p2 = NULL;
 
-	if (check_registered(sptr) || !sptr->user)
+	if (check_registered_user(sptr))
 		return 0;
 
 	if (parc < 2 || *parv[1] == '\0')
@@ -1285,8 +1282,7 @@ char	*parv[];
 			*/
 			flags = (ChannelExists(name)) ? 0 : CHFL_CHANOP;
 
-			if (list_length(sptr->user->channel) >=
-			    MAXCHANNELSPERUSER)
+			if (sptr->user->joined >= MAXCHANNELSPERUSER)
 			    {
 				sendto_one(sptr, err_str(ERR_TOOMANYCHANNELS),
 					   me.name, parv[0], name);
@@ -1348,7 +1344,7 @@ char	*parv[];
 	Reg1	aChannel *chptr;
 	char	*p = NULL, *name;
 
-	if (check_registered(sptr))
+	if (check_registered_user(sptr))
 		return 0;
 
 	if (parc < 2 || parv[1][0] == '\0')
@@ -1415,6 +1411,9 @@ char	*parv[];
 	aChannel *chptr;
 	int	chasing = 0;
 	char	*comment, *name, *p = NULL, *user, *p2 = NULL;
+#ifdef	V28PlusOnly
+	int	mlen, len = 0, nlen;
+#endif
 
 	if (check_registered(sptr))
 		return 0;
@@ -1426,13 +1425,16 @@ char	*parv[];
 		return 0;
 	    }
 	if (IsServer(sptr))
-		sendto_ops_butone(NULL, "KICK from %s for %s %s",
-				  parv[0], parv[1], parv[2]);
+		sendto_ops("KICK from %s for %s %s",
+			   parv[0], parv[1], parv[2]);
 	comment = (BadPtr(parv[3])) ? parv[0] : parv[3];
 	if (strlen(comment) > (size_t) TOPICLEN)
 		comment[TOPICLEN] = '\0';
 
 	*nickbuf = *buf = '\0';
+#ifdef	V28PlusOnly
+	mlen = 7 + strlen(parv[0]);
+#endif
 
 	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
@@ -1452,19 +1454,27 @@ char	*parv[];
 			continue;
 		    }
 #ifdef	V28PlusOnly
-		if (*buf)
-			(void)strcat(buf, ",");
-		(void)strcat(buf, chptr->name);
+		if (len + mlen + strlen(name) < (size_t) BUFSIZE / 2)
+		    {
+			if (*buf)
+				(void)strcat(buf, ",");
+			(void)strcat(buf, name);
+			len += strlen(name) + 1;
+		    }
+		else
+			continue;
+		nlen = 0;
 #endif
 
 		for (; (user = strtoken(&p2, parv[2], ",")); parv[2] = NULL)
 		    {
 			if (!(who = find_chasing(sptr, user, &chasing)))
 				continue; /* No such user left! */
-			if (chasing)
-				sendto_one(sptr,
-				   ":%s NOTICE %s :KICK changed from %s to %s",
-					   me.name, parv[0], user, who->name);
+#ifdef	V28PlusOnly
+			if (nlen + mlen + strlen(who->name) >
+			    (size_t) BUFSIZE - NICKLEN)
+				continue;
+#endif
 			if (IsMember(who, chptr))
 			    {
 				sendto_channel_butserv(chptr, sptr,
@@ -1474,6 +1484,7 @@ char	*parv[];
 				if (*nickbuf)
 					(void)strcat(nickbuf, ",");
 				(void)strcat(nickbuf, who->name);
+				nlen += strlen(who->name);
 #else
 				sendto_match_servs(chptr, cptr,
 						   ":%s KICK %s %s :%s",
@@ -1484,7 +1495,7 @@ char	*parv[];
 			    }
 			else
 				sendto_one(sptr, err_str(ERR_USERNOTINCHANNEL),
-					   me.name, parv[0], who->name, name);
+					   me.name, parv[0], user, name);
 #ifndef	V28PlusOnly
 			if (!IsServer(cptr))
 				break;
@@ -1614,7 +1625,7 @@ char	*parv[];
 	aClient *acptr;
 	aChannel *chptr;
 
-	if (check_registered(sptr))
+	if (check_registered_user(sptr))
 		return 0;
 
 	if (parc < 3 || *parv[1] == '\0')
@@ -1754,11 +1765,14 @@ char	*parv[];
 	Reg2	aClient *c2ptr;
 	Reg3	Link	*lp;
 	aChannel *ch2ptr = NULL;
-	int	idx, flag, len;
+	int	idx, flag, len, mlen;
 	char	*s, *para = parc > 1 ? parv[1] : NULL;
 
-	if (hunt_server(cptr, sptr, ":%s NAMES %s %s", 2, parc, parv))
+	if (parc > 1 &&
+	    hunt_server(cptr, sptr, ":%s NAMES %s %s", 2, parc, parv))
 		return 0;
+
+	mlen = strlen(me.name) + 10;
 
 	if (!BadPtr(para))
 	    {
@@ -1781,8 +1795,10 @@ char	*parv[];
 
 	for (chptr = channel; chptr; chptr = chptr->nextch)
 	    {
-		if (!BadPtr(para) && ((ch2ptr != chptr) || !MyConnect(sptr)))
+		if ((chptr != ch2ptr) && !BadPtr(para))
 			continue; /* -- wanted a specific channel */
+		if (!MyConnect(sptr) && BadPtr(para))
+			continue;
 		if (!ShowChannel(sptr, chptr))
 			continue; /* -- users on this are not listed */
 
@@ -1809,10 +1825,10 @@ char	*parv[];
 			else if (lp->flags & CHFL_VOICE)
 				(void)strcat(buf, "+");
 			(void)strncat(buf, c2ptr->name, NICKLEN);
-			idx += len + 1;
+			idx += strlen(c2ptr->name) + 1;
 			flag = 1;
 			(void)strcat(buf," ");
-			if (idx + NICKLEN > BUFSIZE - 2)
+			if (mlen + idx + NICKLEN > BUFSIZE - 2)
 			    {
 				sendto_one(sptr, rpl_str(RPL_NAMREPLY),
 					   me.name, parv[0], buf);
@@ -1873,7 +1889,7 @@ char	*parv[];
 		idx += strlen(c2ptr->name) + 1;
 		(void)strcat(buf," ");
 		flag = 1;
-		if (idx + NICKLEN > BUFSIZE - 2)
+		if (mlen + idx + NICKLEN > BUFSIZE - 2)
 		    {
 			sendto_one(sptr, rpl_str(RPL_NAMREPLY),
 				   me.name, parv[0], buf);
@@ -1894,12 +1910,13 @@ aClient	*cptr, *user;
 {
 	Reg1	Link	*lp;
 	Reg2	aChannel *chptr;
-	Reg3	int	cnt = 0;
+	Reg3	int	cnt = 0, len = 0, clen;
 	char	 *mask;
 
 	*buf = ':';
 	(void)strcpy(buf+1, user->name);
 	(void)strcat(buf, " JOIN ");
+	len = strlen(user->name) + 7;
 
 	for (lp = user->user->channel; lp; lp = lp->next)
 	    {
@@ -1909,19 +1926,25 @@ aClient	*cptr, *user;
 				continue;
 		if (*chptr->chname == '&')
 			continue;
-		if (strlen(chptr->chname) > (size_t) BUFSIZE - 2 - strlen(buf))
+		clen = strlen(chptr->chname);
+		if (clen > (size_t) BUFSIZE - 4 - len)
 		    {
 			if (cnt)
 				sendto_one(cptr, "%s", buf);
 			*buf = ':';
 			(void)strcpy(buf+1, user->name);
 			(void)strcat(buf, " JOIN ");
+			len = strlen(user->name) + 7;
 			cnt = 0;
 		    }
-		(void)strncat(buf, chptr->chname, BUFSIZE - 2 - strlen(buf));
+		(void)strcpy(buf + len, chptr->chname);
 		cnt++;
+		len += clen;
 		if (lp->next)
+		    {
+			len++;
 			(void)strcat(buf, ",");
+		    }
 	    }
 	if (*buf && cnt)
 		sendto_one(cptr, "%s", buf);

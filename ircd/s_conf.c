@@ -48,7 +48,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_conf.c	2.47 13 Sep 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_conf.c	2.49 27 Oct 1993 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -891,7 +891,7 @@ int	opt;
 				len += strlen(aconf->host);
 				newhost = (char *)MyMalloc(len);
 				(void)sprintf(newhost, "*@%s", aconf->host);
-				(void)free(aconf->host);
+				MyFree(aconf->host);
 				aconf->host = newhost;
 			    }
 		/*
@@ -1056,7 +1056,7 @@ aClient	*cptr;
 
 	if (!cptr->user)
 		return 0;
-	name = cptr->username;
+	name = cptr->user->username;
 	host = cptr->sockhost;
 	Debug((DEBUG_INFO, "R-line check for %s[%s]", name, host));
 
@@ -1098,7 +1098,7 @@ aClient	*cptr;
 			(void)dup2(2, 1);
 			if (pi[1] != 2 && pi[1] != 1)
 				(void)close(pi[1]);
-			(void)execlp(tmp->passwd, name, host, 0);
+			(void)execlp(tmp->passwd, tmp->passwd, name, host, 0);
 			exit(-1);
 		    }
 		default :

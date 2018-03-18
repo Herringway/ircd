@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_misc.c	2.36 10 Sep 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_misc.c	2.39 27 Oct 1993 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -204,16 +204,18 @@ int	showip;
 		    {
 			if (showip)
 				(void) sprintf(nbuf, "%s[%s]",
-					sptr->name, sptr->acpt->sockhost);
+					sptr->name, sptr->sockhost);
 			else
 				(void) sprintf(nbuf, "%s[%s]",
-					sptr->name, sptr->sockhost);
+					sptr->name, me.sockhost);
 		    }
 		else
 		    {
 			if (showip)
 				(void)sprintf(nbuf, "%s[%s@%s.%u]",
-					sptr->name, sptr->username,
+					sptr->name,
+					(!(sptr->flags & FLAGS_GOTID)) ? "" :
+					sptr->username,
 					inetntoa((char *)&sptr->ip),
 					(unsigned int)sptr->port);
 			else
@@ -536,7 +538,7 @@ char	*comment;
 
 	/* Remove sptr from the client list */
 	if (del_from_client_hash_table(sptr->name, sptr) != 1)
-		Debug((DEBUG_FATAL, "0x%x !in tab %s[%s] %x %x %x %d %d %x",
+		Debug((DEBUG_ERROR, "%#x !in tab %s[%s] %#x %#x %#x %d %d %#x",
 			sptr, sptr->name,
 			sptr->from ? sptr->from->sockhost : "??host",
 			sptr->from, sptr->next, sptr->prev, sptr->fd,

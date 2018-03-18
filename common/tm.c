@@ -10,6 +10,9 @@ main()
 	testm("a?a", "a?a");
 	testm("a\\?a", "aaa");
 	testm("a\\?a", "a?a");
+	testm("*", "*\\**");
+	testm("*\\**", "*");
+	testm("*", "a\\*a");
 }
 
 testm(msk, nam)
