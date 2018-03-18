@@ -47,6 +47,8 @@
 #define FALSE (0)
 #define TRUE  (!FALSE)
 
+#include <stdio.h>
+
 #ifndef	MALLOCH
 char	*malloc(), *calloc();
 void	free();

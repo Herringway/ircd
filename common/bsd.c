@@ -30,7 +30,9 @@ Computing Center and Jarkko Oikarinen";
 #include <signal.h>
 
 extern	int errno; /* ...seems that errno.h doesn't define this everywhere */
+#ifndef __FreeBSD__
 extern	char	*sys_errlist[];
+#endif
 
 #ifdef DEBUGMODE
 int	writecalls = 0, writeb[10] = {0,0,0,0,0,0,0,0,0,0};

@@ -61,7 +61,7 @@
  * If your host supports varargs and has vsprintf(), vprintf() and vscanf()
  * C calls in its library, then you can define USE_VARARGS to use varargs
  * instead of imitation variable arg passing.
-#undef	USE_VARARGS
+#define	USE_VARARGS
  * NOTE: with current server code, varargs doesn't survive because it can't
  *       be used in a chain of 3 or more funtions which all have a variable
  *       number of params.  If anyone has a solution to this, please notify
@@ -84,13 +84,13 @@
 #define	HAVECURSES		/* If you have curses, and want to use it.  */
 #undef	HAVETERMCAP		/* If you have termcap, and want to use it. */
 
-#ifdef notdef
+#ifdef ENABLE_NOTE
 /* Define NPATH if you want to run NOTE system. Be sure that this file is
  * either not present or non empty (result of previous size). If it is empty,
  * then remove it before starting the server.
  * The file is for request save/backup.
  */
-#define NPATH "/usr/lib/irc/.ircdnote"
+#define NPATH "!!PREFIX!!/lib/ircd/.ircdnote"
 #endif
 
 /*
@@ -98,8 +98,8 @@
  * these are only the recommened names and paths. Change as needed.
  * You must define these to something, even if you don't really want them.
  */
-#define	DPATH	"/scratch/avalon/ircd"	/* dir where all ircd stuff is */
-#define	SPATH	"/scratch/avalon/ircd/bin/ircd"
+#define	DPATH	"!!PREFIX!!/lib/ircd"	/* dir where all ircd stuff is */
+#define	SPATH	"!!PREFIX!!/bin/ircd"
 #define	CPATH	"ircd.conf"	/* server configuration file */
 #define	MPATH	"ircd.motd"	/* server MOTD file */
 #define	LPATH	"/tmp/ircd.log" /* Where the debug file lives, if DEBUGMODE */
@@ -112,8 +112,8 @@
  * FNAME_USERLOG just logs user connections, FNAME_OPERLOG logs every
  * successful use of /oper.  These are either full paths or files within DPATH.
  */
-#define FNAME_USERLOG "/usr/local/lib/ircd/users" /* */
-#define FNAME_OPERLOG "/usr/local/lib/ircd/opers" /* */
+#define FNAME_USERLOG "!!PREFIX!!/lib/ircd/users" /* */
+#define FNAME_OPERLOG "!!PREFIX!!/lib/ircd/opers" /* */
 
 /* CHROOTDIR
  *
@@ -150,7 +150,7 @@
  * mode "i" (i == invisible). Invisibility means people dont showup in
  * WHO or NAMES unless they are on the same channel as you.
  */
-#undef	NO_DEFAULT_INVISIBLE
+#define	NO_DEFAULT_INVISIBLE
 
 /* OPER_KILL
  *
@@ -211,7 +211,7 @@
  * to a leaf which just has 1 server (typically the uplink). Define this
  * correctly for performance reasons.
  */
-#define	HUB
+#undef	HUB
 
 /* R_LINES:  The conf file now allows the existence of R lines, or
  * restrict lines.  These allow more freedom in the ability to restrict
@@ -252,7 +252,7 @@
  * The server will then call m4 each time it reads the ircd.conf file,
  * reading m4 output as the server's ircd.conf file.
  */
-#define	M4_PREPROC
+#undef	M4_PREPROC
 
 /*
  * If you wish to have the server send 'vital' messages about server

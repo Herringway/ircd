@@ -548,6 +548,7 @@ register long i;
     return (char *) c;
 }
 
+#ifndef __STDC__
 static long atol(c)
 register unsigned char *c;
 {
@@ -561,6 +562,7 @@ register unsigned char *c;
    }
   return a;
 }
+#endif
 
 static void init_messages()
 {

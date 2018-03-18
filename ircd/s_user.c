@@ -1996,7 +1996,7 @@ char	*parv[];
 	return 0;
 }
 
-#if defined(NPATH)
+#if !defined(NPATH)
 int	m_note(cptr, sptr, parc, parv)
 aClient	*cptr, *sptr;
 int	parc;

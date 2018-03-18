@@ -532,7 +532,12 @@ extern	char	*generation, *creation;
 /* misc defines */
 
 #define	FLUSH_BUFFER	-2
+#ifdef __FreeBSD__
+#include <utmp.h>
+#define	UTMP		_PATH_UTMP
+#else
 #define	UTMP		"/etc/utmp"
+#endif
 #define	COMMA		","
 
 /* IRC client structures */

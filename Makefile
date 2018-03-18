@@ -22,9 +22,9 @@ RM=/bin/rm
 INCLUDEDIR=../include
 
 # Default flags:
-CFLAGS= -I$(INCLUDEDIR) -O
-#IRCDLIBS=
-IRCLIBS=-lcurses -ltermcap
+CFLAGS= -I$(INCLUDEDIR) -O2
+IRCDLIBS=-lgnumalloc -lcrypt
+IRCLIBS=-lcurses -ltermcap -lgnumalloc 
 #
 # use the following on MIPS:
 #CFLAGS= -systype bsd43 -DSYSTYPE_BSD43 -I$(INCLUDEDIR)
@@ -82,12 +82,12 @@ IRCDMODE = 711
 
 # IRCDDIR must be the same as DPATH in include/config.h
 #
-IRCDDIR=/usr/local/src/ircd
+IRCDDIR=${PREFIX}/lib/ircd
 
 SHELL=/bin/sh
-SUBDIRS=common ircd irc
-BINDIR=$(IRCDDIR)
-MANDIR=/usr/local/man
+SUBDIRS=common ircd # irc
+BINDIR=${PREFIX}/bin
+MANDIR=${PREFIX}/man
 INSTALL=/usr/bin/install
 
 MAKE=make 'CFLAGS=${CFLAGS}' 'CC=${CC}' 'IRCDLIBS=${IRCDLIBS}' \
@@ -135,7 +135,7 @@ depend:
 
 install: all
 	chmod +x ./bsdinstall
-	@for i in ircd irc doc; do \
+	@for i in ircd doc; do \
 		echo "Installing $$i";\
 		cd $$i;\
 		${MAKE} install; cd ..;\
