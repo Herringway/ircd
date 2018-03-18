@@ -1,3 +1,76 @@
+2.10.1
+
+1998-11-12  Christophe Kalt
+
+	* Doc references to @stealth.net changed to @irc.org.
+
+	* s_serv.c: report_ping() now sends some extra info to &DEBUG.
+
+	* s_bsd.c: send_ping() window set to 20 minutes (instead of 10),
+	and never close it.
+
+1998-11-03  Christophe Kalt
+
+	* s_serv.c: changed m_trace() to only show unknowns to opers and
+	local clients.
+
+	* a_io.c: fd remap processing bugfix (from Q@ping.be).
+
+	* s_bsd.c: fixed ircd/iauth problem with servers ircd connects to.
+
+1998-10-31  Christophe Kalt
+
+	* parse.c: reordered msgtab[].
+
+	* s_serv.c: added more restrictions to m_links(), m_stats() [t],
+	m_motd() and m_lusers() for remote clients. (*sigh*)
+
+	* channel.c: fixed count_channels() not to count empty channels.
+
+1998-10-28  Christophe Kalt
+
+	* s_user.c: optimized m_whois() (pointed out by several people).
+
+	* s_user.c, channel.c: channel creator flag is now removed on -o.
+
+	* channel.c:
+		* !channel creation is now done with !! rather than !#.
+		* fixed channel counters (affects /lusers & /stats z).
+		* m_njoin(): simple optimization.
+
+Sat Oct 10 18:55:38 1998  Christophe Kalt  <kalt@millennium.stealth.net>
+
+	* a_io.c: don't TST_* if cldata[i].?fd <= 0 in loop_io().
+
+	* ircd.s, s_auth.c, s_bsd.c, s_bsd_ext.h: always attempt to
+	restart iauth in start_iauth() after receiving a SIGUSR1.
+
+	* s_service.c: reverted part of last change.
+
+	* s_user.c: last change introduced a bug. (typo, reported by N. Aust)
+
+	* channel.c: fixed match_modeid() to handle remote clients
+	properly now that it's used from can_send().	
+
+Thu Oct  8 18:33:50 1998  Christophe Kalt  <kalt@millennium.stealth.net>
+
+	* configure.in: always compile with -g flag, and never strip.
+
+	* channel.c:
+		* renamed sub1_from_channel() to free_channel().
+		* always send modes for empty channels during netjoin.
+		* fixed old (2.9.x) memory leak in collect_channel_garbage().
+
+	* s_id.c:
+		* linked list corruption bugfix in collect_chid().
+		* added logic to avoid excessive caching in cache_chid().
+
+	* s_service.c: stdarg bugfix in check_service_butone (from O.G.).
+
+Sun Sep 27 15:12:53 1998  Christophe Kalt  <kalt@millennium.stealth.net>
+
+	* s_user.c: prefix bugfix (reported by mrg).
+
 2.10.0p1
 
 Fri Sep 25 22:21:06 1998  Christophe Kalt  <kalt@millennium.stealth.net>

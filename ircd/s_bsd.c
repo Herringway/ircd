@@ -35,7 +35,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.40 1998/09/18 22:02:27 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.44 1998/11/12 11:46:36 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -415,7 +415,8 @@ void	close_listeners()
 }
 
 void
-start_iauth()
+start_iauth(rcvdsig)
+int rcvdsig;
 {
 #if defined(USE_IAUTH)
 	static time_t last = 0;
@@ -431,7 +432,7 @@ start_iauth()
 		return;
 	    }
 	read_iauth(); /* to reset olen */
-	if ((time(NULL) - last) > 300)
+	if ((time(NULL) - last) > 300 || rcvdsig)
 	    {
 		sendto_flag(SCH_AUTH, "Starting iauth...");
 		last = time(NULL);
@@ -509,7 +510,7 @@ void	init_sys()
 			(void)fprintf(stderr, "Hard Limit: %d IRC max: %d\n",
 				      (int) limit.rlim_max, MAXCONNECTIONS);
 			(void)fprintf(stderr,
-				      "Recompile and fix MAXCONNECTIONS\n");
+				      "Fix MAXCONNECTIONS and recompile.\n");
 			exit(-1);
 		    }
 		limit.rlim_cur = limit.rlim_max; /* make soft limit the max */
@@ -598,7 +599,7 @@ void	init_sys()
 init_dgram:
 	resfd = init_resolver(0x1f);
 
-	start_iauth();
+	start_iauth(0);
 }
 
 void	write_pidfile()
@@ -2413,7 +2414,8 @@ int	*lenp;
 		sizeof(struct in_addr));
 	bcopy((char *)&aconf->ipnum, (char *)&cptr->ip,
 		sizeof(struct in_addr));
-	server.sin_port = htons((aconf->port > 0) ? aconf->port : portnum);
+	cptr->port = (aconf->port > 0) ? aconf->port : portnum;
+	server.sin_port = htons(cptr->port);
 	/*
 	 * Look for a duplicate IP#,port pair among already open connections
 	 * (This caters for unestablished connections).
@@ -2765,10 +2767,10 @@ aConfItem *aconf;
 	pi.pi_seq = cp->lseq++;
 	cp->seq++;
 	/*
-	 * Only recognise stats from the last 10 minutes as significant...
+	 * Only recognise stats from the last 20 minutes as significant...
 	 * Try and fake sliding along a "window" here.
 	 */
-	if (cp->seq * aconf->class->conFreq > 600)
+	if (cp->seq > 1 && cp->seq * aconf->class->conFreq > 1200)
 	    {
 		if (cp->recv)
 		    {
