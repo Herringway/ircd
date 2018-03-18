@@ -228,30 +228,52 @@ if [ -f $TMP -o -d $TMP ] ; then
 	$RM -f $TMP
 fi
 cat > $PLATE <<_EOF_
+#include <sys/types.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <sys/file.h>
+#include <signal.h>
+alarmed()
+{
+	exit(1);
+}
 main()
 {
-	int f;
-	f = fcntl(0, F_SETFL, BLOCKING);
+	char b[12], x[32];
+	int f, l = sizeof(x);
+	f = socket(AF_INET, SOCK_DGRAM, 0);
+	if (f >= 0 && !(fcntl(f, F_SETFL, BLOCKING))) {
+		signal(SIGALRM, alarmed);
+		alarm(3);
+		recvfrom(f, b, 12, 0, x, &l);
+		alarm(0);
+		exit(0);
+	}
+	exit(1);
 }
 _EOF_
 sed -e 's/BLOCKING/O_NONBLOCK/' $PLATE > $TMP
-`eval $COMP`
+eval $COMP
+if [ 0 -eq $? ] ; then
+	eval $EXEC
+fi
 if [ 0 -eq $? ] ; then
 	BLOCK=O_NONBLOCK
 else
-	echo 'O_NONBLOCK not present in fcntl.h or sys/ioctl.h'
+	echo 'O_NONBLOCK not present/working in fcntl.h or sys/ioctl.h'
 	if [ -f $TMP -o -d $TMP ] ; then
 		$RM -f $TMP $EXEC;
 	fi
 	sed -e 's/BLOCKING/O_NDELAY/' $PLATE > $TMP
 	eval $COMP
 	if [ 0 -eq $? ] ; then
+		eval $EXEC
+	fi
+	if [ 0 -eq $? ] ; then
 		BLOCK=O_NDELAY
 	else
-		echo 'O_NDELAY not present in fcntl.h or sys/ioctl.h'
+		echo 'O_NDELAY not present/working in fcntl.h or sys/ioctl.h'
 		if [ -f $TMP -o -d $TMP ] ; then
 			$RM -f $TMP $EXEC;
 		fi
