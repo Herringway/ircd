@@ -1,3 +1,149 @@
+2000-05-29  Kurt Roeckx
+
+	* s_bsd.c/setup_ping(): typo which caused compile to fail using IPv6
+	* configure: removed warning about poll() with linux 2.0 and libc6
+	* res.c/proc_answer(): Added check for too long hostnames
+	* s_conf.c/find_bounce(): send to the fd instead of class
+
+2000-05-16  Piotr Kucharski
+
+	* s_bsd.c/start_iauth(), config.h.dist: increase socket buffers
+	  for ircd-iauth communication
+	* channel.c/send_user_joins(): use rindex to check for ':' in
+ 	  channel names
+	* hash.c/bigger_hash_table(): removed some unnecessary code
+	* hash.c/hash_find_*(): removed so called "performance optimization",
+	  which only seemed to eat cpu
+	* parse.c: require registration for using NJOIN
+
+2000-05-05  Kurt Roeckx
+
+	* a_conf.c/conf_read(): Check cfh properly
+	* s_auth.c/read_iauth(): olen was calculated wrongly (off by 1)
+	* s_auth.c/read_iauth(): olen could be != 0 when iauth is restarted
+
+2000-04-09  Kurt Roeckx
+
+	* README, ircdwatch.8, INSTALL: Changed some forgotten references
+	  to @stealth.net to @irc.org
+	* s_bsd.c/setup_ping(): missing parentheses caused it to listen to
+	  all ip's instead of the selected.
+	* s_user.c/register_user(): removed some debug message
+	* channel.c/m_join(): call clean_channelname() faster.
+	* hash.c/bigger_hash_table(): build client hast table from the old one.
+
+2000-02-10  Kurt Roeckx
+
+	* hash.c/hash_find_server(): prevent creation of illegal pointers
+	* channel.c/m_join(): called exit_client with correct value's
+	  for a local client
+	* s_bsd.c/report_error(): calling it with cptr == NULL would cause
+	  a core dump.
+	* s_serv.c/m_stats(): cleanup of stats l
+	* s_conf.c: Allow compressed notation in the config file, and
+	  convert it to non-compressed when reading it
+	* s_user.c/m_nick(): Extra penalty on nick-change if you can't
+	  speak on a channel
+	* s_err.c: Changed RPL_LUSERME to say how many users he has, it
+	  said incorrectly that it where clients before.
+	* configure: Try to do better checking for IPv6 capable systems
+
+2000-02-04  Piotr Kucharski
+
+	* mod_socks.c/socks_read(): when using "careful" option, iauth
+	should not close connection before checking ST_V5b (from
+	KIKUCHI Takahiro)
+
+2000-02-03  Kurt Roeckx
+
+	* Makefile.in: Added $(LDFLAGS) and $(LIBS) for ircdwatch
+	* os.h, res.c, s_bsd.c: Removed all s6_laddr's because it's not 
+	  portable
+	* res.c, s_auth.c: added missing calls for inetntop, was using
+	  ipv4 functions while it should be ipv6.
+	* hash.c: check store to be non-NULL
+
+2000-01-03  Kurt Roeckx
+
+	* ircd.c/io_loop(): removed annoying debug message
+	* res.c/update_list(): don't use addrcount in for loop
+	* s_user.c/register_user(): don't cp the username if it's the same
+	* a_conf.c/conf_read(): fixed missing some initialisation when ident
+	  wasn't loaded
+
+2000-01-01  Kurt Roeckx
+
+	* configure, configure.in: check for md5, FreeBSD uses it.
+	* match.c: mask can now be empty, and will then return no match
+	* whowas.c, hash.c: prevent creation of illegal pointers
+	* s_misc.c/date(): fix for the offset bug during year change
+	* s_conf.c/match_ipmask(): now checks the username, changed algo
+	  for ipv4, and added it for ipv6.
+	* s_conf.c/lookup_confhost(): Now correctly checks for ipv6 ips
+	* chkconf.c/initconf(): No longer free()'s non alloc()'d memory
+	* res.c/update_list(): Fix for ipv6, and also cleans it up a little
+
+2000-01-01  Piotr Kucharski
+
+	* s_user.c/register_user(): moved some stuff around, so m_lusers
+	show proper number of clients (including just registered user).
+
+1999-11-11  Christophe Kalt
+
+	* s_bsd.c/add_unixconnection(): needed to be iauth aware.
+
+1999-11-10  Christophe Kalt
+
+	* struct_def.h, channel.c/m_join(): added code to reject clients
+	trying to join a channel used by the PrettyPark virus.  (This is a
+	sad day).
+
+1999-11-03  Christophe Kalt
+
+	* configure.in: check for getipnodebyname() for IPv6.
+
+	* c_bsd.c, resolv_def.h, res_init.c, s_bsd.c: updated code to
+	follow RFC 2553 (from Roar Thronæs).
+
+	* mod_rfc931.c: renamed _data structure which causes problems
+	under Compaq Tru64 Unix 5.0 (from Roar Thronæs).
+
+1999-10-30  Kurt Roeckx
+
+	* irc.c/main(): me.info was not allocated big enough (off by 1)
+
+1999-10-04  Kurt Roeckx
+
+	* channel.c/reop_channel(): removed a '(' that was there too much
+	* configure.in: only detect ipv6 as linux, if the header files
+	  are there, and detect if the system has native ipv6 support
+	* os.h: readded define for POLLRDNORM
+	* os.h: only define in6addr_any under linux if glibc version is < 2.1
+	* os.h: removed defenition for uint32_t, which isn't use anywhere.
+	  you should use u_int32_t instead.
+	* os.h: define s6_laddr as in6a_words, if found, else as s6_addr32
+	* configure.in, setup.h.in, os.h: check for ncurses/ncurses.h
+
+1999-10-03  Christophe Kalt
+
+	* a_conf.c: OpenBSD doesn't have RTLD_NOW, only RTLD_LAZY (as
+	reported by Phil Pennock).
+
+1999-09-23  Piotr Kucharski
+
+	* channel.c/reop_channel(): do not reop local restricted clients
+	(patch from wnelson).
+
+	* s_bsd.c/summon(): let summon know about /dev/pts too (from pht).
+
+1999-09-05  Piotr Kucharski
+
+	* whowas.c/m_whowas(): fixed two bad behaviours (reported by viha)
+
+1999-08-30  Christophe Kalt
+
+	* os.h: moved __GNU_SOURCE up (linux).
+
 2.10.3
 
 1999-08-13  Christophe Kalt

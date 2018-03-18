@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.65 1999/07/02 16:49:37 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.65.2.1 2000/02/10 18:56:13 q Exp $";
 #endif
 
 #include "os.h"
@@ -1368,8 +1368,8 @@ char	*parv[];
 	aClient	*acptr;
 	char	stat = parc > 1 ? parv[1][0] : '\0';
 	Reg	int	i;
-	int	doall = 0, wilds = 0;
-	char	*name = NULL, *cm = NULL;
+	int	wilds, doall;
+	char	*name, *cm;
 
 	if (IsServer(cptr) &&
 	    (stat != 'd' && stat != 'p' && stat != 'q' && stat != 's' &&
@@ -1389,31 +1389,17 @@ char	*parv[];
 				2, parc, parv) != HUNTED_ISME)
 			return 5;
 	    }
-	else if (parc == 4)
+	else if (parc >= 3)
 	    {
 		if (hunt_server(cptr, sptr, ":%s STATS %s %s %s",
 				2, parc, parv) != HUNTED_ISME)
 			return 5;
 	    }
 
-	if (parc > 2)
-	    {
-		name = parv[2];
-		if (!mycmp(name, ME))
-			doall = 2;
-		else if (match(name, ME) == 0)
-			doall = 1;
-		if (index(name, '*') || index(name, '?'))
-			wilds = 1;
-		if (parc > 3)
-		    {
-			cm = parv[3];
-			if (!index(cm, '*') && !index(cm, '?'))
-				wilds = 0, doall = 0;
-		    }
-	    }
-	else
-		name = ME;
+	name = (parc > 2) ? parv[2] : ME;
+	cm = (parc > 3) ? parv[3]: name;
+	doall = !match(name, ME) && !match(cm, ME);
+	wilds = index(cm, '*') || index(cm, '?');
 
 	switch (stat)
 	{
@@ -1424,34 +1410,39 @@ char	*parv[];
 		 * are invisible not being visible to 'foreigners' who use
 		 * a wild card based search to list it.
 		 */
-		for (i = 0; i <= highest_fd; i++)
+		if (doall || wilds)
 		    {
-			if (!(acptr = local[i]))
-				continue;
-#if 0
-			if (IsPerson(acptr) && IsInvisible(acptr) &&
-			    (doall || wilds) && !(MyConnect(sptr) &&
-			     IsLocal(sptr) && IsOper(sptr)) &&
-			    !IsAnOper(acptr) && acptr != sptr)
-#endif
-			if (IsPerson(acptr) &&
-			    (doall || wilds) &&
-			    !(MyConnect(sptr) && IsAnOper(sptr)) &&
-			    acptr != sptr)
-				continue;
-			if (!doall && wilds && match(name, acptr->name))
-				continue;
-			if (!(doall || wilds) &&
-			    ((!cm && mycmp(name, acptr->name)) ||
-			     (cm && match(cm, acptr->name))))
-				continue;
-			sendto_one(cptr, Lformat, ME,
-				   RPL_STATSLINKINFO, parv[0],
-				   get_client_name(acptr, isupper(stat)),
-				   (int)DBufLength(&acptr->sendQ),
-				   (int)acptr->sendM, (int)acptr->sendK,
-				   (int)acptr->receiveM, (int)acptr->receiveK,
-				   timeofday - acptr->firsttime);
+			for (i = 0; i <= highest_fd; i++)
+			    {
+				if (!(acptr = local[i]))
+					continue;
+				if (IsPerson(acptr) && !(MyConnect(sptr) 
+				    && IsAnOper(sptr)) && acptr != sptr)
+					continue;
+				if (wilds && match(cm, acptr->name))
+					continue;
+				sendto_one(cptr, Lformat, ME,
+					RPL_STATSLINKINFO, parv[0],
+					get_client_name(acptr, isupper(stat)),
+					(int)DBufLength(&acptr->sendQ),
+					(int)acptr->sendM, (int)acptr->sendK,
+					(int)acptr->receiveM, 
+					(int)acptr->receiveK,
+					timeofday - acptr->firsttime);
+			    }
+		    }
+		else
+		    {
+			if ((acptr = find_client(cm, NULL)))
+				sendto_one(cptr, Lformat, ME,
+					RPL_STATSLINKINFO, parv[0],
+					get_client_name(acptr, isupper(stat)),
+					(int)DBufLength(&acptr->sendQ),
+					(int)acptr->sendM, (int)acptr->sendK,
+					(int)acptr->receiveM,
+					(int)acptr->receiveK,
+					timeofday - acptr->firsttime);
+			
 		    }
 		break;
 #if defined(USE_IAUTH)

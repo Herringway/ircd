@@ -35,7 +35,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.73 1999/07/23 17:15:14 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.73.2.8 2000/05/29 19:28:20 q Exp $";
 #endif
 
 #include "os.h"
@@ -157,7 +157,7 @@ aClient *cptr;
 	 * gamble anyway.
 	 */
 #ifdef	SO_ERROR
-	if (!IsMe(cptr) && cptr->fd >= 0)
+	if (cptr && !IsMe(cptr) && cptr->fd >= 0)
 		if (!GETSOCKOPT(cptr->fd, SOL_SOCKET, SO_ERROR, &err, &len))
 			if (err)
 				errtmp = err;
@@ -192,7 +192,7 @@ int	port;
 	/*
 	 * do it this way because building ip# from separate values for each
 	 * byte requires endian knowledge or some nasty messing. Also means
-	 * easy conversion of "*" 0.0.0.0 or 134.* to 134.0.0.0 :-)
+	 * easy conversion of "*" to 0.0.0.0 or 134.* to 134.0.0.0 :-)
 	 */
 	(void)sscanf(ipmask, "%d.%d.%d.%d", &ad[0], &ad[1], &ad[2], &ad[3]);
 	(void)sprintf(ipname, "%d.%d.%d.%d", ad[0], ad[1], ad[2], ad[3]);
@@ -434,7 +434,7 @@ int rcvdsig;
 #if defined(USE_IAUTH)
 	static time_t last = 0;
 	static char first = 1;
-	int sp[2], fd;
+	int sp[2], fd, val;
 
 	if ((bootopt & BOOT_NOIAUTH) != 0)
 		return;
@@ -462,27 +462,44 @@ int rcvdsig;
 	adfd = sp[0];
 	set_non_blocking(sp[0], NULL);
 	set_non_blocking(sp[1], NULL); /* less to worry about in iauth */
+	val = IAUTH_BUFFER;
+	if (setsockopt(sp[0], SOL_SOCKET, SO_SNDBUF, (void *) &val,
+	    sizeof(val)) < 0)
+			sendto_flag(SCH_AUTH,
+			    "IAUTH_BUFFER too big for sp0 sndbuf, using default");
+	if (setsockopt(sp[1], SOL_SOCKET, SO_SNDBUF, (void *) &val,
+	    sizeof(val)) < 0)
+			sendto_flag(SCH_AUTH,
+			    "IAUTH_BUFFER too big for sp1 sndbuf, using default");
+	if (setsockopt(sp[0], SOL_SOCKET, SO_RCVBUF, (void *) &val,
+	    sizeof(val)) < 0)
+			sendto_flag(SCH_AUTH,
+			    "IAUTH_BUFFER too big for sp0 rcvbuf, using default");
+	if (setsockopt(sp[1], SOL_SOCKET, SO_RCVBUF, (void *) &val,
+	    sizeof(val)) < 0)
+			sendto_flag(SCH_AUTH,
+			    "IAUTH_BUFFER too big for sp1 rcvbuf, using default");
 	switch (vfork())
 	    {
-	case -1:
-		sendto_flag(SCH_ERROR, "vfork() failed!");
-		sendto_flag(SCH_AUTH, "Failed to restart iauth!");
-		close(sp[0]); close(sp[1]);
-		adfd = -1;
-		return;
-	case 0:
-		for (fd = 0; fd < MAXCONNECTIONS; fd++)
-			if (fd != sp[1])
-				(void)close(fd);
-		if (sp[1] != 0)
-		    {
-			(void)dup2(sp[1], 0);
+		case -1:
+			sendto_flag(SCH_ERROR, "vfork() failed!");
+			sendto_flag(SCH_AUTH, "Failed to restart iauth!");
+			close(sp[0]); close(sp[1]);
+			adfd = -1;
+			return;
+		case 0:
+			for (fd = 0; fd < MAXCONNECTIONS; fd++)
+				if (fd != sp[1])
+					(void)close(fd);
+			if (sp[1] != 0)
+			    {
+				(void)dup2(sp[1], 0);
+				close(sp[1]);
+			    }
+			if (execl(IAUTH_PATH, IAUTH, NULL) < 0)
+				_exit(-1); /* should really not happen.. */
+		default:
 			close(sp[1]);
-		    }
-		if (execl(IAUTH_PATH, IAUTH, NULL) < 0)
-			_exit(-1); /* should really not happen.. */
-	default:
-		close(sp[1]);
 	    }
 
 	if (first)
@@ -760,8 +777,7 @@ Reg	aClient	*cptr;
 
 #ifdef INET6
 	if (IN6_IS_ADDR_LOOPBACK(&cptr->ip) || IsUnixSocket(cptr) ||
-		(cptr->ip.s6_laddr[0]==mysk.sin6_addr.s6_laddr[0] &&
-		 cptr->ip.s6_laddr[1]==mysk.sin6_addr.s6_laddr[1])
+	    !memcmp(cptr->ip.s6_addr, mysk.sin6_addr.s6_addr, 8) 
 /* ||
 	    IN6_ARE_ADDR_SAMEPREFIX(&cptr->ip, &mysk.SIN_ADDR))
  about the same, I think              NOT */
@@ -1706,6 +1722,14 @@ int	fd;
 	add_client_to_list(acptr);
 	set_non_blocking(acptr->fd, acptr);
 	(void)set_sock_opts(acptr->fd, acptr);
+# if defined(USE_IAUTH)
+	/*
+	** iauth protocol and iauth itself should be extended to alllow
+	** dealing with this type of connection.
+	*/
+	sendto_iauth("%d O", acptr->fd);
+	SetDoneXAuth(acptr);
+# endif
 	return;
 }
 #endif
@@ -2718,6 +2742,7 @@ char	*namebuf, *linebuf, *chname;
 	 */
 	if ((linebuf[0] != 't' || linebuf[1] != 't' || linebuf[2] != 'y')
 	    && (linebuf[0] != 'c' || linebuf[1] != 'o' || linebuf[2] != 'n')
+	    && (linebuf[0] != 'p' || linebuf[1] != 't' || linebuf[2] != 's')
 #ifdef HPUX
 	    && (linebuf[0] != 'p' || linebuf[1] != 't' || linebuf[2] != 'y' ||
 		linebuf[3] != '/')
@@ -2817,6 +2842,10 @@ int	len;
 	struct	hostent	*hp;
 	char	*cname = cptr->name;
 	aConfItem	*aconf;
+#ifdef HAVE_GETIPNODEBYNAME
+	int	error_num1, error_num2;
+	struct	hostent	*hp1, *hp2;
+#endif
 
 	/*
 	** Setup local socket structure to use for binding to.
@@ -2847,7 +2876,14 @@ int	len;
 	*/
 	if (BadPtr(cname))
 		return;
+#ifdef HAVE_GETIPNODEBYNAME
+	hp1 = getipnodebyname(cname, AF_INET6, AI_DEFAULT, &error_num1);
+	hp2 = getipnodebyname(name, AF_INET6, AI_DEFAULT, &error_num2);
+	if (! error_num1) hp=hp1; else hp=hp2;
+	if ((! error_num1) || (! error_num2)) 
+#else
 	if ((hp = gethostbyname(cname)) || (hp = gethostbyname(name)))
+#endif
 	    {
 		char	*hname;
 		int	i = 0;
@@ -2876,6 +2912,10 @@ int	len;
 		Debug((DEBUG_DEBUG,"local name is %s",
 				get_client_name(&me,TRUE)));
 	    }
+#ifdef HAVE_GETIPNODEBYNAME
+	freehostent(hp1);
+	freehostent(hp2);
+#endif
 	return;
 }
 
@@ -2893,8 +2933,10 @@ aConfItem	*aconf;
 	bzero((char *)&from, sizeof(from));
 	if (aconf->passwd && isdigit(*aconf->passwd))
 #ifdef INET6
-	  if(!inet_pton(AF_INET6, aconf->passwd,from.sin6_addr.s6_addr))
-		bcopy(minus_one, from.sin6_addr.s6_addr, IN6ADDRSZ);
+	    {
+		if (!inet_pton(AF_INET6, aconf->passwd,from.sin6_addr.s6_addr))
+			bcopy(minus_one, from.sin6_addr.s6_addr, IN6ADDRSZ);
+	    }
 #else
 	  from.sin_addr.s_addr = inetaddr(aconf->passwd);
 #endif

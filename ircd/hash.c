@@ -17,7 +17,7 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: hash.c,v 1.15 1999/06/25 21:50:01 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: hash.c,v 1.15.2.7 2000/05/14 16:59:35 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -89,7 +89,8 @@ int	*store;
 	if (hash < 0)
 		hash = -hash;
 	*/
-	*store = hash;
+	if (store)
+		*store = hash;
 	hash %= _HASHSIZE;
 	return (hash);
 }
@@ -118,7 +119,8 @@ int	*store;
 		hash <<= 1;
 		hash += hashtab[(u_int)ch] + (i << 1);
 	}
-	*store = hash;
+	if (store)
+		*store = hash;
 	hash %= _CHANNELHASHSIZE;
 	return (hash);
 }
@@ -249,7 +251,7 @@ int	new;
 		size, osize, table, new));
 
 	*size = new;
-	MyFree((char *)table);
+	ircd_writetune(tunefile);
 	table = (aHashEntry *)MyMalloc(sizeof(*table) * new);
 	bzero((char *)table, sizeof(*table) * new);
 
@@ -257,19 +259,20 @@ int	new;
 	    {
 		Debug((DEBUG_ERROR, "Channel Hash Table from %d to %d (%d)",
 			    osize, new, chsize));
+		sendto_flag(SCH_HASH, "Channel Hash Table from %d to %d (%d)",
+			osize, new, chsize);
 		chmiss = 0;
 		chhits = 0;
 		chsize = 0;
 		channelTable = table;
 		for (chptr = channel; chptr; chptr = chptr->nextch)
-			chptr->hnextch = NULL;
-		for (chptr = channel; chptr; chptr = chptr->nextch)
 			(void)add_to_channel_hash_table(chptr->chname, chptr);
-		sendto_flag(SCH_HASH, "Channel Hash Table from %d to %d (%d)",
-			    osize, new, chsize);
+		MyFree(otab);
 	    }
 	else if (otab == clientTable)
 	    {
+		int	i;
+		aClient	*next;
 		Debug((DEBUG_ERROR, "Client Hash Table from %d to %d (%d)",
 			    osize, new, clsize));
 		sendto_flag(SCH_HASH, "Client Hash Table from %d to %d (%d)",
@@ -278,10 +281,18 @@ int	new;
 		clhits = 0;
 		clsize = 0;
 		clientTable = table;
-		for (cptr = client; cptr; cptr = cptr->next)
-			cptr->hnext = NULL;
-		for (cptr = client; cptr; cptr = cptr->next)
-			(void)add_to_client_hash_table(cptr->name, cptr);
+
+		for (i = 0; i < osize; i++)
+		    {
+			for (cptr = (aClient *)otab[i].list; cptr;
+				cptr = next)
+			    {
+				next = cptr->hnext;
+				(void)add_to_client_hash_table(cptr->name, 
+					cptr);
+			    }
+		    }
+		MyFree(otab);
 	    }
 	else if (otab == serverTable)
 	    {
@@ -292,11 +303,9 @@ int	new;
 		svsize = 0;
 		serverTable = table;
 		for (sptr = svrtop; sptr; sptr = sptr->nexts)
-			sptr->shnext = NULL;
-		for (sptr = svrtop; sptr; sptr = sptr->nexts)
 			(void)add_to_server_hash_table(sptr, sptr->bcptr);
+		MyFree(otab);
 	    }
-	ircd_writetune(tunefile);
 	return;
 }
 
@@ -518,6 +527,7 @@ aClient	*cptr;
 			 * block of code is also used for channels and
 			 * servers for the same performance reasons.
 			 */
+			/* I think this is useless concern --Beeth
 			if (prv)
 			    {
 				aClient *tmp2;
@@ -527,6 +537,7 @@ aClient	*cptr;
 				prv->hnext = tmp->hnext;
 				tmp->hnext = tmp2;
 			    }
+			*/
 			return (tmp);
 		    }
 	clmiss++;
@@ -541,7 +552,7 @@ char	*server;
 aClient *cptr;
 {
 	Reg	aClient	*tmp, *prv = NULL;
-	Reg	char	*t;
+	Reg	char	*t, *s;
 	Reg	char	ch;
 	aHashEntry	*tmp3;
 	u_int	hashv, hv;
@@ -556,6 +567,7 @@ aClient *cptr;
 		if (hv == tmp->hashv && mycmp(server, tmp->name) == 0)
 		    {
 			clhits++;
+			/*
 			if (prv)
 			    {
 				aClient *tmp2;
@@ -565,10 +577,11 @@ aClient *cptr;
 				prv->hnext = tmp->hnext;
 				tmp->hnext = tmp2;
 			    }
+			*/
 			return (tmp);
 		    }
 	    }
-	t = ((char *)server + strlen(server));
+	t = ((char *)server + strlen(server)) - 1;
 	/*
 	 * Whats happening in this next loop ? Well, it takes a name like
 	 * foo.bar.edu and proceeds to search for *.edu and then *.bar.edu.
@@ -577,11 +590,12 @@ aClient *cptr;
 	 */
 	for (;;)
 	    {
+		while (t > server && (*t != '.'))
+			t--;
+		if (t == server)
+			break;
 		t--;
-		for (; t >= server; t--)
-			if (*(t+1) == '.')
-				break;
-		if (t < server || *t == '*')
+		if (*t == '*')
 			break;
 		ch = *t;
 		*t = '*';
@@ -618,6 +632,7 @@ aChannel *chptr;
 		if (hv == tmp->hashv && mycmp(name, tmp->chname) == 0)
 		    {
 			chhits++;
+			/*
 			if (prv)
 			    {
 				register aChannel *tmp2;
@@ -627,6 +642,7 @@ aChannel *chptr;
 				prv->hnextch = tmp->hnextch;
 				tmp->hnextch = tmp2;
 			    }
+			*/
 			return (tmp);
 		    }
 	chmiss++;

@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.30 1999/07/21 22:57:39 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.30.2.1 2000/01/01 18:10:25 q Exp $";
 #endif
 
 #include "os.h"
@@ -64,13 +64,22 @@ time_t	clock;
 	gm = &gmbuf;
 	lt = localtime(&clock);
 
-	if (lt->tm_yday == gm->tm_yday)
-		minswest = (gm->tm_hour - lt->tm_hour) * 60 +
-			   (gm->tm_min - lt->tm_min);
-	else if (lt->tm_yday > gm->tm_yday)
-		minswest = (gm->tm_hour - (lt->tm_hour + 24)) * 60;
-	else
-		minswest = ((lt->tm_hour + 24) - gm->tm_hour) * 60;
+	minswest = (gm->tm_hour - lt->tm_hour) * 60 
+		    + (gm->tm_min - lt->tm_min);	
+	if (lt->tm_yday != gm->tm_yday)
+	    {
+		if ((lt->tm_yday > gm->tm_yday 
+		    && lt->tm_year == gm->tm_year) 
+		    || (lt->tm_yday < gm->tm_yday 
+		    && lt->tm_year != gm->tm_year)) 
+		    {
+			minswest -= 24 * 60;
+		    }
+		else
+		    {
+			minswest += 24 * 60;
+		    }
+	    }
 
 	plus = (minswest > 0) ? '-' : '+';
 	if (minswest < 0)

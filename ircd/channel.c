@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static	char rcsid[] = "@(#)$Id: channel.c,v 1.109 1999/08/13 17:30:16 kalt Exp $";
+static	char rcsid[] = "@(#)$Id: channel.c,v 1.109.2.6 2000/05/09 15:47:27 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -1995,6 +1995,10 @@ char	*parv[];
 			(void)strcpy(jbuf, "0");
 			continue;
 		    }
+		if (MyClient(sptr))
+		    {
+			clean_channelname(name);
+		    }
 		if (*name == '!')
 		    {
 			chptr = NULL;
@@ -2162,6 +2166,14 @@ char	*parv[];
 			/* can't return, need to send the info everywhere */
 			continue;
 		}
+
+		if (MyConnect(sptr) &&
+		    !strncmp(name, "\x23\x1f\x02\xb6\x03\x34\x63\x68\x02\x1f",
+			     10))
+		    {
+			sptr->exitc = EXITC_VIRUS;
+			return exit_client(sptr, sptr, &me, "Virus Carrier");
+		    }
 
 		chptr = get_channel(sptr, name, CREATE);
 
@@ -3136,7 +3148,7 @@ aClient	*cptr, *user;
 		if (*chptr->chname == '!' && !(cptr->serv->version & SV_NCHAN))
 			/* in reality, testing SV_NCHAN here is pointless */
 			continue;
-		if ((mask = index(chptr->chname, ':')))
+		if ((mask = rindex(chptr->chname, ':')))
 			if (match(++mask, cptr->name))
 				continue;
 		clen = strlen(chptr->chname);
@@ -3200,14 +3212,14 @@ aChannel *chptr;
 			    chptr->reop = 0;
 			    return 0;
 			}
-		    if (MyConnect(lp->value.cptr))
+		    if (MyConnect(lp->value.cptr) && !IsRestricted(lp->value.cptr))
 			    op.value.cptr = lp->value.cptr;
 		    lp = lp->next;
 		}
 	    if (op.value.cptr == NULL &&
 		((now - chptr->reop) < LDELAYCHASETIMELIMIT))
 		    /*
-		    ** do nothing if no local users, 
+		    ** do nothing if no unrestricted local users, 
 		    ** unless the reop is really overdue.
 		    */
 		    return 0;
@@ -3236,11 +3248,15 @@ aChannel *chptr;
 			    cnt = 0;
 			    mbuf[0] = nbuf[0] = '\0';
 			}
-		    op.value.cptr = lp->value.cptr;
-		    change_chan_flag(&op, chptr);
-		    mbuf[cnt++] = 'o';
-		    strcat(nbuf, lp->value.cptr->name);
-		    strcat(nbuf, " ");
+		    if (!(MyConnect(lp->value.cptr) 
+			&& IsRestricted(lp->value.cptr)))
+			{
+			    op.value.cptr = lp->value.cptr;
+			    change_chan_flag(&op, chptr);
+			    mbuf[cnt++] = 'o';
+			    strcat(nbuf, lp->value.cptr->name);
+			    strcat(nbuf, " ");
+			}
 		    lp = lp->next;
 		}
 	    if (cnt)
@@ -3267,6 +3283,7 @@ aChannel *chptr;
 			    return 0;
 			}
 		    if (MyConnect(lp->value.cptr) &&
+			!IsRestricted(lp->value.cptr) &&
 			lp->value.cptr->user->last > idlelimit &&
 			(op.value.cptr == NULL ||
 			 lp->value.cptr->user->last>op.value.cptr->user->last))

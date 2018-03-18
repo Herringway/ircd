@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_user.c,v 1.86 1999/07/17 11:47:49 q Exp $";
+static  char rcsid[] = "@(#)$Id: s_user.c,v 1.86.2.6 2000/04/09 21:05:27 q Exp $";
 #endif
 
 #include "os.h"
@@ -604,23 +604,11 @@ char	*nick, *username;
 	    }
 	else
 		strncpyzt(user->username, username, USERLEN+1);
+
 	SetClient(sptr);
-	if (MyConnect(sptr))
-	    {
-		sprintf(buf, "%s!%s@%s", nick, user->username, user->host);
-		sptr->exitc = EXITC_REG;
-		sendto_one(sptr, rpl_str(RPL_WELCOME, nick), buf);
-		/* This is a duplicate of the NOTICE but see below...*/
-		sendto_one(sptr, rpl_str(RPL_YOURHOST, nick),
-			   get_client_name(&me, FALSE), version);
-		sendto_one(sptr, rpl_str(RPL_CREATED, nick), creation);
-		sendto_one(sptr, rpl_str(RPL_MYINFO, parv[0]),
-			   ME, version);
-		(void)m_lusers(sptr, sptr, 1, parv);
-		(void)m_motd(sptr, sptr, 1, parv);
-		nextping = timeofday;
-	    }
-	else if (IsServer(cptr))
+	if (!MyConnect(sptr))
+/* && IsServer(cptr)) -- obsolete, old 2.8 protocol;
+   someone needs to clean all this 2.8 stuff --Beeth */
 	    {
 		acptr = find_server(user->server, NULL);
 		if (acptr && acptr->from != cptr)
@@ -654,13 +642,6 @@ char	*nick, *username;
 				   user->servp->tok, 
 				   (*buf) ? buf : "+", sptr->info);
 	    }	/* for(my-leaf-servers) */
-	if (MyConnect(sptr))
-	    {
-		if (IsRestricted(sptr))
-			sendto_one(sptr, err_str(ERR_RESTRICTED, nick));
-		send_umode(sptr, sptr, 0, ALL_UMODES, buf);
-	    }
-
 	if (IsInvisible(sptr))		/* Can be initialized in m_user() */
 		istat.is_user[1]++;	/* Local and server defaults +i */
 	else
@@ -669,6 +650,21 @@ char	*nick, *username;
 	    {
 		istat.is_unknown--;
 		istat.is_myclnt++;
+		sprintf(buf, "%s!%s@%s", nick, user->username, user->host);
+		sptr->exitc = EXITC_REG;
+		sendto_one(sptr, rpl_str(RPL_WELCOME, nick), buf);
+		/* This is a duplicate of the NOTICE but see below...*/
+		sendto_one(sptr, rpl_str(RPL_YOURHOST, nick),
+			   get_client_name(&me, FALSE), version);
+		sendto_one(sptr, rpl_str(RPL_CREATED, nick), creation);
+		sendto_one(sptr, rpl_str(RPL_MYINFO, parv[0]),
+			   ME, version);
+		(void)m_lusers(sptr, sptr, 1, parv);
+		(void)m_motd(sptr, sptr, 1, parv);
+		if (IsRestricted(sptr))
+			sendto_one(sptr, err_str(ERR_RESTRICTED, nick));
+		send_umode(sptr, sptr, 0, ALL_UMODES, buf);
+		nextping = timeofday;
 	    }
 #ifdef	USE_SERVICES
 #if 0
@@ -1008,9 +1004,10 @@ nickkilldone:
 					   err_str(ERR_RESTRICTED, nick));
 				return 2;
 			    }
-			/* is the user banned on any channel ? */
+			/* Can the user speak on all channels? */
 			for (lp = sptr->user->channel; lp; lp = lp->next)
-				if (can_send(sptr, lp->value.chptr) ==MODE_BAN)
+				if (can_send(sptr, lp->value.chptr) &&
+				    !IsQuiet(lp->value.chptr))
 					break;
 		}
 		/*

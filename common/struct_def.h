@@ -797,6 +797,7 @@ typedef	struct	{
 #define EXITC_AREFQ	'u'	/* Unauthorized by iauth, be quiet */
 #define EXITC_AUTHFAIL	'A'	/* Authentication failure (iauth problem) */
 #define EXITC_AUTHTOUT	'a'	/* Authentication time out */
+#define EXITC_VIRUS	'v'	/* joined a channel used by PrettyPark virus */
 
 /* eXternal authentication slave OPTions */
 #define	XOPT_REQUIRED	0x01	/* require authentication be done by iauth */

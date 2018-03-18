@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_auth.c,v 1.43 1999/07/02 16:38:21 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_auth.c,v 1.43.2.3 2000/05/05 23:27:31 q Exp $";
 #endif
 
 #include "os.h"
@@ -180,6 +180,7 @@ read_iauth()
 			    sendto_flag(SCH_AUTH, "Aiiie! lost slave authentication process (errno = %d)", errno);
 			    close(adfd);
 			    adfd = -1;
+			    olen = 0;
 			    start_iauth(0);
 			}
 		    break;
@@ -331,8 +332,14 @@ read_iauth()
 			    start = end;
 			    continue;
 			}
+#ifndef	INET6
 		    sprintf(tbuf, "%c %d %s %u ", start[0], i,
 			    inetntoa((char *)&cptr->ip), cptr->port);
+#else
+		    sprintf(tbuf, "%c %d %s %u ", start[0], i,
+			    inetntop(AF_INET6, (char *)&cptr->ip, 
+			    mydummy, MYDUMMY_SIZE), cptr->port);
+#endif
 		    if (strncmp(tbuf, start, strlen(tbuf)))
 			{
 			    /* this is fairly common and can be ignored */
@@ -443,10 +450,9 @@ read_iauth()
 			}
 		    start = end;
 		}
-	    if (start != buf+olen)
-		    bcopy(start, obuf, olen = (buf+olen)-start+1);
-	    else
-		    olen = 0;
+	    olen -= start - buf;
+	    if (olen)
+		    memcpy(obuf, start, olen);
 	}
 }
 
