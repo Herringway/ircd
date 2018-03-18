@@ -8,7 +8,7 @@
 #include <string.h>
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: mkpasswd.c,v 1.2 1997/04/14 15:04:41 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: mkpasswd.c,v 1.1 1998/04/07 21:21:00 kalt Exp $";
 #endif
 
 extern char *getpass();

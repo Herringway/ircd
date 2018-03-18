@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_service.c,v 1.19 1997/12/18 13:33:30 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_service.c,v 1.22 1998/08/24 02:26:35 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -115,10 +115,11 @@ void	*p1, *p2, *p3, *p4, *p5, *p6, *p7, *p8;
 void	check_services_butone(long action, char *server, aClient *cptr, char *fmt, ...)
 #endif
 {
-	char nbuf[NICKLEN + USERLEN + HOSTLEN + 3] = "";
+	char nbuf[NICKLEN + USERLEN + HOSTLEN + 3];
 	Reg	aClient	*acptr;
 	Reg	int	i;
 
+	*nbuf = '\0';
 	for (i = 0; i <= highest_fd; i++)
 	    {
 		if (!(acptr = local[i]) || !IsService(acptr) ||
@@ -217,7 +218,7 @@ int	wants;
 				   (wants & SERVICE_WANT_TOKEN)?
 				   sptr->user->servp->tok : sptr->user->server,
 				   sptr->info);
-		if (wants & SERVICE_WANT_UMODE)
+		if (wants & SERVICE_WANT_UMODE|SERVICE_WANT_OPER)
 			sendto_one(cptr, ":%s MODE %s %s", prefix, sptr->name,
 				   umode);
 	    }
@@ -446,7 +447,10 @@ char	*parv[];
 	sp->refcnt++;
 	svc->server = mystrdup(sp->bcptr->name);
 	strncpyzt(svc->dist, dist, HOSTLEN);
-	strncpyzt(sptr->info, info, REALLEN);
+	if (sptr->info != DefInfo)
+		MyFree(sptr->info);
+	if (strlen(info) > REALLEN) info[REALLEN] = '\0';
+	sptr->info = mystrdup(info);
 	svc->wants = 0;
 	svc->type = type;
 	sptr->hopcount = metric;
@@ -612,6 +616,9 @@ char	*parv[];
 					continue;
 				if (burst & SERVICE_WANT_UMODE)
 					send_umode(NULL, acptr, 0, SEND_UMODES,
+						   buf);
+				else if (burst & SERVICE_WANT_OPER)
+					send_umode(NULL, acptr, 0, FLAGS_OPER,
 						   buf);
 				sendnum_toone(sptr, burst, acptr, buf);
 			    }

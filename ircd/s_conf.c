@@ -48,7 +48,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.27.2.4 1998/05/17 20:29:33 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.35 1998/09/22 11:26:57 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -89,20 +89,18 @@ aClient *cptr;
 {
         int i1, i2, i3, i4, m;
         u_long lmask, baseip;
+	char *at;
  
+	if (at = index(mask, '@'))
+		mask = at + 1;
         if (sscanf(mask, "%d.%d.%d.%d/%d", &i1, &i2, &i3, &i4, &m) != 5 ||
            m < 1 || m > 31) {
                sendto_flag(SCH_LOCAL, "Ignoring bad mask: %s", mask);
                 return -1;
         }
-        lmask = htonl(0xfffffffful << (32 - m)); /* /24 -> 0xffffff00ul */
+        lmask = htonl((u_long)0xffffffffL << (32 - m)); /* /24->0xffffff00ul */
         baseip = htonl(i1 * 0x1000000 + i2 * 0x10000 + i3 * 0x100 + i4);
-#ifdef INET6
-	return 1;
-/*        return ((cptr->ip.s6_addr & lmask) == baseip) ? 0 : 1;*/
-#else
         return ((cptr->ip.s_addr & lmask) == baseip) ? 0 : 1;
-#endif
 }
 
 /*
@@ -132,8 +130,8 @@ char	*sockhost;
 			for (i = 0, hname = hp->h_name; hname;
 			     hname = hp->h_aliases[i++])
 			    {
-				(void)strncpy(fullname, hname,
-					sizeof(fullname)-1);
+				strncpyzt(fullname, hname,
+					sizeof(fullname));
 				add_local_domain(fullname,
 						 HOSTLEN - strlen(fullname));
 				Debug((DEBUG_DNS, "a_il: %s->%s",
@@ -171,8 +169,6 @@ char	*sockhost;
 			add_local_domain(uhost, sizeof(uhost) - strlen(uhost));
 		    }
 attach_iline:
-		if (index(uhost, '@'))
-			cptr->flags |= FLAGS_DOID;
 		if (aconf->status & CONF_RCLIENT)
 			SetRestricted(cptr);
 		get_sockhost(cptr, uhost);
@@ -589,7 +585,7 @@ int	statmask;
 			continue;
 		    }
 		*s = '@';
-		if (!bcmp((char *)&tmp->ipnum, ip, sizeof(struct IN_ADDR)))
+		if (!bcmp((char *)&tmp->ipnum, ip, sizeof(struct in_addr)))
 			return tmp;
 	    }
 	return NULL;
@@ -813,7 +809,7 @@ int	opt;
 	Debug((DEBUG_DEBUG, "initconf(): ircd.conf = %s", configfile));
 	if ((fd = openconf()) == -1)
 	    {
-#ifdef	M4_PREPROC
+#if defined(M4_PREPROC) && !defined(USE_IAUTH)
 		(void)wait(0);
 #endif
 		return -1;
@@ -861,7 +857,7 @@ int	opt;
 		    line[0] == ' ' || line[0] == '\t')
 			continue;
 		/* Could we test if it's conf line at all?	-Vesa */
-		if (line[1] != IRCDCONF_DELIMITER)
+		if (line[1] != ':')
 		    {
                         Debug((DEBUG_ERROR, "Bad config line: %s", line));
                         continue;
@@ -1130,7 +1126,10 @@ int	opt;
 		*/
 		if (aconf->status == CONF_ME)
 		    {
-			strncpyzt(me.info, aconf->name, sizeof(me.info));
+			if (me.info != DefInfo)
+				MyFree(me.info);
+			me.info = MyMalloc(REALLEN+1);
+			strncpyzt(me.info, aconf->name, REALLEN+1);
 			if (ME[0] == '\0' && aconf->host[0])
 				strncpyzt(ME, aconf->host,
 					  sizeof(ME));
@@ -1153,7 +1152,7 @@ int	opt;
 		free_conf(aconf);
 	(void)dgets(-1, NULL, 0); /* make sure buffer is at empty pos */
 	(void)close(fd);
-#ifdef	M4_PREPROC
+#if defined(M4_PREPROC) && !defined(USE_IAUTH)
 	(void)wait(0);
 #endif
 	check_class();
@@ -1194,30 +1193,17 @@ Reg	aConfItem	*aconf;
 	ln.flags = ASYNC_CONF;
 
 	if (isdigit(*s))
-#ifdef INET6
-		if(!inet_pton(AF_INET6, s, aconf->ipnum.s6_addr))
-			bcopy(minus_one, aconf->ipnum.s6_addr, IN6ADDRSZ);
-#else
 		aconf->ipnum.s_addr = inetaddr(s);
-#endif
 	else if ((hp = gethost_byname(s, &ln)))
 		bcopy(hp->h_addr, (char *)&(aconf->ipnum),
-			sizeof(struct IN_ADDR));
+			sizeof(struct in_addr));
 
-#ifdef INET6
-	if (AND16(aconf->ipnum.s6_addr) == 255)
-#else
 	if (aconf->ipnum.s_addr == -1)
-#endif
 		goto badlookup;
 	return 0;
 badlookup:
-#ifdef INET6
-	if (AND16(aconf->ipnum.s6_addr) == 255)
-#else
 	if (aconf->ipnum.s_addr == -1)
-#endif
-		bzero((char *)&aconf->ipnum, sizeof(struct IN_ADDR));
+		bzero((char *)&aconf->ipnum, sizeof(struct in_addr));
 	Debug((DEBUG_ERROR,"Host/server name error: (%s) (%s)",
 		aconf->host, aconf->name));
 	return -1;
@@ -1237,12 +1223,7 @@ char	**comment;
 		return 0;
 
 	host = cptr->sockhost;
-#ifdef INET6
-	ip = (char *) inetntop(AF_INET6, (char *)&cptr->ip, mydummy,
-			       MYDUMMY_SIZE);
-#else
 	ip = (char *) inetntoa((char *)&cptr->ip);
-#endif
 	if (!strcmp(host, ip))
 		ip = NULL; /* we don't have a name for the ip# */
 	name = cptr->user->username;
@@ -1319,6 +1300,8 @@ char	**comment;
 
 	if (tmp && !BadPtr(tmp->passwd))
 		*comment = tmp->passwd;
+	else
+		*comment = NULL;
 
  	return (tmp ? -1 : 0);
 }
@@ -1355,7 +1338,7 @@ int	stat;
 	for (tmp = conf; tmp; tmp = tmp->next)
  		if ((tmp->status == stat) && tmp->passwd && tmp->name &&
  		    (match(tmp->name, name) == 0) &&
-		    strpbrk(key, tmp->passwd))
+		    (match(tmp->passwd, key) == 0))
 			break;
  	return (tmp ? -1 : 0);
 }
@@ -1447,7 +1430,9 @@ aClient	*cptr;
 		(void)dgets(-1, NULL, 0); /* make sure buffer marked empty */
 		(void)close(pi[0]);
 		(void)kill(rc, SIGKILL); /* cleanup time */
+#if !defined(USE_IAUTH)
 		(void)wait(0);
+#endif
 
 		rc = 0;
 		while (*rplhold == ' ')
@@ -1565,11 +1550,7 @@ int	class, fd;
 				SPRINTF(rpl, rpl_str(RPL_BOUNCE,"unknown"),
 					aconf->name, aconf->port);
 				strcat(rpl, "\r\n");
-#ifdef INET6
-				sendto(class, rpl, strlen(rpl), 0, 0, 0);
-#else
 				send(class, rpl, strlen(rpl), 0);
-#endif
 				return;
 			    }
 			else

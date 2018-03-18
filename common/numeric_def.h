@@ -233,6 +233,12 @@
 #define RPL_INVITING         341
 #define	RPL_SUMMONING        342
 
+#define RPL_INVITELIST       346
+#define RPL_ENDOFINVITELIST  347
+
+#define RPL_EXCEPTLIST       348
+#define RPL_ENDOFEXCEPTLIST  349
+
 #define RPL_VERSION          351
 
 #define RPL_WHOREPLY         352
@@ -299,6 +305,7 @@
 #define RPL_SERVLIST         234
 #define RPL_SERVLISTEND      235
 
+#define	RPL_STATSIAUTH       239
 #define	RPL_STATSVLINE       240
 #define	RPL_STATSLLINE       241
 #define	RPL_STATSUPTIME      242
@@ -324,3 +331,4 @@
 #define	RPL_TRACELOG         261
 #define	RPL_TRACEEND         262
 #define	RPL_TRYAGAIN         263
+

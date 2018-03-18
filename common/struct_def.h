@@ -31,6 +31,7 @@ typedef	struct	CPing	aCPing;
 typedef	struct	Zdata	aZdata;
 #ifdef CACHED_MOTD
 typedef struct        MotdItem aMotd;
+typedef struct        MotdItem aExtCf;
 #endif
 
 #define	HOSTLEN		63	/* Length of hostname.  Updated to         */
@@ -49,10 +50,11 @@ typedef struct        MotdItem aMotd;
 #define	KEYLEN		23
 #define	BUFSIZE		512		/* WARNING: *DONT* CHANGE THIS!!!! */
 #define	MAXRECIPIENTS 	20
-#define	MAXBANS		20
+#define	MAXBANS		30
 #define	MAXBANLENGTH	1024
 #define	BANLEN		(USERLEN + NICKLEN + HOSTLEN + 3)
 #define MAXPENALTY	10
+#define	CHIDLEN		5		/* WARNING: *DONT* CHANGE THIS!!!! */
 
 #define	READBUF_SIZE	16384	/* used in s_bsd.c *AND* s_zip.c ! */
  
@@ -93,7 +95,10 @@ typedef struct        MotdItem aMotd;
 #define	BOOT_TTY	0x010
 #define	BOOT_OPER	0x020
 #define	BOOT_AUTODIE	0x040
-#define BOOT_BADTUNE	0x080
+#define	BOOT_BADTUNE	0x080
+#define	BOOT_PROT	0x100
+#define	BOOT_STRICTPROT	0x200
+#define	BOOT_NOIAUTH	0x400
 
 #define	STAT_RECONNECT	-7	/* Reconnect attempt for server connections */
 #define	STAT_LOG	-6	/* logfile for -x */
@@ -136,7 +141,7 @@ typedef struct        MotdItem aMotd;
 #define	FLAGS_PINGSENT   0x0001	/* Unreplied ping sent */
 #define	FLAGS_DEADSOCKET 0x0002	/* Local socket is dead--Exiting soon */
 #define	FLAGS_KILLED     0x0004	/* Prevents "QUIT" from being sent for this */
-#define	FLAGS_BLOCKED    0x0008	/* socket is in a blocked condition */
+#define	FLAGS_BLOCKED    0x0008	/* socket is in a blocked condition [unused] */
 #define	FLAGS_UNIX	 0x0010	/* socket is in the unix domain, not inet */
 #define	FLAGS_CLOSING    0x0020	/* set when closing to suppress errors */
 #define	FLAGS_LISTEN     0x0040 /* used to mark clients which we listen() on */
@@ -146,27 +151,28 @@ typedef struct        MotdItem aMotd;
 #define	FLAGS_WRAUTH	 0x0400	/* set if we havent writen to ident server */
 #define	FLAGS_LOCAL	 0x0800 /* set for local clients */
 #define	FLAGS_GOTID	 0x1000	/* successful ident lookup achieved */
-#define	FLAGS_DOID	 0x2000	/* I-lines say must use ident return [unused]*/
+#define	FLAGS_XAUTH	 0x2000	/* waiting on external authentication */
 #define	FLAGS_NONL	 0x4000 /* No \n in buffer */
 #define	FLAGS_HELD	 0x8000	/* connection held and reconnect try */
 #define	FLAGS_CBURST	0x10000	/* set to mark connection burst being sent */
-#define FLAGS_RILINE    0x20000 /* Restricted i-line */
+#define FLAGS_RILINE    0x20000 /* Restricted i-line [unused?] */
 #define FLAGS_QUIT      0x40000 /* QUIT :comment shows it's not a split */
 #define FLAGS_SPLIT     0x80000 /* client QUITting because of a netsplit */
 #define FLAGS_HIDDEN   0x100000 /* netsplit is behind a hostmask */
 #define	FLAGS_UNKCMD   0x200000	/* has sent an unknown command */
 #define	FLAGS_ZIP      0x400000 /* link is zipped */
 #define	FLAGS_ZIPRQ    0x800000 /* zip requested */
+#define	FLAGS_ZIPSTART	0x1000000 /* start of zip (ignore any CRLF) */
 
 #define	FLAGS_OPER       0x0001	/* Operator */
 #define	FLAGS_LOCOP      0x0002 /* Local operator -- SRB */
 #define	FLAGS_WALLOP     0x0004 /* send wallops to them */
 #define	FLAGS_INVISIBLE  0x0008 /* makes user invisible */
 #define FLAGS_RESTRICTED 0x0010 /* Restricted user */
+#define FLAGS_AWAY       0x0020 /* user is away */
 
-#define	SEND_UMODES	(FLAGS_INVISIBLE|FLAGS_OPER|FLAGS_WALLOP)
+#define	SEND_UMODES	(FLAGS_INVISIBLE|FLAGS_OPER|FLAGS_WALLOP|FLAGS_AWAY)
 #define	ALL_UMODES	(SEND_UMODES|FLAGS_LOCOP|FLAGS_RESTRICTED)
-#define	FLAGS_ID	(FLAGS_DOID|FLAGS_GOTID)
 
 /*
  * flags macros.
@@ -199,6 +205,7 @@ typedef struct        MotdItem aMotd;
 #define	DoingDNS(x)		((x)->flags & FLAGS_DOINGDNS)
 #define	SetAccess(x)		((x)->flags |= FLAGS_CHKACCESS)
 #define	DoingAuth(x)		((x)->flags & FLAGS_AUTH)
+#define	DoingXAuth(x)		((x)->flags & FLAGS_XAUTH)
 #define	NoNewLine(x)		((x)->flags & FLAGS_NONL)
 
 #define	ClearOper(x)		((x)->user->flags &= ~FLAGS_OPER)
@@ -207,6 +214,7 @@ typedef struct        MotdItem aMotd;
 #define	ClearWallops(x)		((x)->user->flags &= ~FLAGS_WALLOP)
 #define	ClearDNS(x)		((x)->flags &= ~FLAGS_DOINGDNS)
 #define	ClearAuth(x)		((x)->flags &= ~FLAGS_AUTH)
+#define	ClearXAuth(x)		((x)->flags &= ~FLAGS_XAUTH)
 #define	ClearAccess(x)		((x)->flags &= ~FLAGS_CHKACCESS)
 
 /*
@@ -240,14 +248,14 @@ struct	CPing	{
 	u_long	ping;
 	u_long	seq;		/* # sent still in the "window" */
 	u_long	lseq;		/* sequence # of last sent */
-	u_long	recvd;		/* # received still in the "window" */
-	u_long	lrecvd;		/* # received */
+	u_long	recv;		/* # received still in the "window" */
+	u_long	lrecv;		/* # received */
 };
 
 struct	ConfItem	{
 	u_int	status;		/* If CONF_ILLEGAL, delete when no clients */
 	int	clients;	/* Number of *LOCAL* clients using this */
-	struct	IN_ADDR ipnum;	/* ip number of host field */
+	struct	in_addr ipnum;	/* ip number of host field */
 	char	*host;
 	char	*passwd;
 	char	*name;
@@ -345,7 +353,7 @@ struct	User	{
 				** by) and whowas array (field ww_user).
 				*/
 	int	joined;		/* number of channels joined */
-	int	flags;
+	int	flags;		/* user modes */
         struct	Server	*servp;
 				/*
 				** In a perfect world the 'server' name
@@ -407,7 +415,7 @@ struct Client	{
 	short	status;		/* Client type */
 	char	name[HOSTLEN+1]; /* Unique name of the client, nick or host */
 	char	username[USERLEN+1]; /* username here now for auth stuff */
-	char	info[REALLEN+1]; /* Free form additional client information */
+	char	*info;		/* Free form additional client information */
 	/*
 	** The following fields are allocated only for local clients
 	** (directly connected to *this* server with a socket.
@@ -440,7 +448,7 @@ struct Client	{
 	int	priority;	/* priority for selection as active */
 	u_short	ract;		/* no fear about this. */
 	u_short	port;		/* and the remote port# too :-) */
-	struct	IN_ADDR	ip;	/* keep real ip# too */
+	struct	in_addr	ip;	/* keep real ip# too */
 	struct	hostent	*hostp;
 	char	sockhost[HOSTLEN+1]; /* This is the host name from the socket
 				  ** and after which the connection was
@@ -567,9 +575,10 @@ struct Channel	{
 	int	users;		/* current membership total */
 	Link	*members;	/* channel members */
 	Link	*invites;	/* outstanding invitations */
-	Link	*banlist;
+	Link	*mlist;		/* list of extended modes: +b/+e/+I */
 	Link	*clist;		/* list of connections which are members */
-	time_t	history;
+	time_t	history;	/* channel history (aka channel delay) */
+	time_t	reop;		/* server reop stamp for !channels */
 	char	chname[1];
 };
 
@@ -579,30 +588,38 @@ struct Channel	{
 
 /* Channel related flags */
 
-#define	CHFL_CHANOP     0x0001 /* Channel operator */
-#define	CHFL_VOICE      0x0002 /* the power to speak */
-#define	CHFL_BAN	0x0004 /* ban channel flag */
+#define	CHFL_UNIQOP     0x0001 /* Channel creator */
+#define	CHFL_CHANOP     0x0002 /* Channel operator */
+#define	CHFL_VOICE      0x0004 /* the power to speak */
+#define	CHFL_BAN	0x0008 /* ban channel flag */
+#define	CHFL_EXCEPTION	0x0010 /* exception channel flag */
+#define	CHFL_INVITE	0x0020 /* invite channel flag */
 
 /* Channel Visibility macros */
 
+#define	MODE_UNIQOP	CHFL_UNIQOP
 #define	MODE_CHANOP	CHFL_CHANOP
 #define	MODE_VOICE	CHFL_VOICE
-#define	MODE_PRIVATE	0x0004
-#define	MODE_SECRET	0x0008
-#define	MODE_MODERATED  0x0010
-#define	MODE_TOPICLIMIT 0x0020
-#define	MODE_INVITEONLY 0x0040
-#define	MODE_NOPRIVMSGS 0x0080
-#define	MODE_KEY	0x0100
-#define	MODE_BAN	0x0200
-#define	MODE_LIMIT	0x0400
-#define	MODE_ANONYMOUS	0x0800
-#define	MODE_QUIET	0x1000
-#define MODE_FLAGS	0x1fff
+#define	MODE_PRIVATE	0x0008
+#define	MODE_SECRET	0x0010
+#define	MODE_MODERATED  0x0020
+#define	MODE_TOPICLIMIT 0x0040
+#define	MODE_INVITEONLY 0x0080
+#define	MODE_NOPRIVMSGS 0x0100
+#define	MODE_KEY	0x0200
+#define	MODE_BAN	0x0400
+#define	MODE_LIMIT	0x0800
+#define	MODE_ANONYMOUS	0x1000
+#define	MODE_QUIET	0x2000
+#define	MODE_EXCEPTION	0x4000
+#define	MODE_INVITE	0x8000
+#define	MODE_REOP	0x10000
+#define	MODE_FLAGS	0x1ffff
 /*
  * mode flags which take another parameter (With PARAmeterS)
  */
-#define	MODE_WPARAS	(MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY|MODE_LIMIT)
+#define	MODE_WPARAS	(MODE_UNIQOP|MODE_CHANOP|MODE_VOICE|MODE_BAN|MODE_KEY\
+			 |MODE_LIMIT|MODE_INVITE|MODE_EXCEPTION)
 /*
  * Undefined here, these are used in conjunction with the above modes in
  * the source.
@@ -628,9 +645,10 @@ struct Channel	{
 #define       IsMember(u, c)          (u && (u)->user && \
 		       find_channel_link((u)->user->channel, c) ? 1 : 0)
 #define	IsChannelName(n)	((n) && (*(n) == '#' || *(n) == '&' || \
-					*(n) == '+'))
+					*(n) == '+' || *(n) == '!'))
 #define	IsQuiet(x)		((x)->mode.mode & MODE_QUIET)
-#define	UseModes(n)		((n) && (*(n) == '#' || *(n) == '&'))
+#define	UseModes(n)		((n) && (*(n) == '#' || *(n) == '&' || \
+					 *(n) == '!'))
 
 /* Misc macros */
 
@@ -654,6 +672,8 @@ typedef	struct	{
 	u_long	is_chanusers;	/* channels users */
 	u_long	is_hchan;	/* channels in history */
 	u_long	is_hchanmem;
+	u_long	is_cchan;	/* channels in cache */
+	u_long	is_cchanmem;
 	u_long	is_away;	/* away sets */
 	u_long	is_awaymem;
 	u_long	is_oper;	/* opers */
@@ -713,10 +733,13 @@ typedef	struct	{
 
 /* used for sendto_serv */
 
-/* semi-obsolete, bitmasks should now be used!!! */
 #define	SV_OLD		0x0000
 #define	SV_29		0x0001	/* useless, but preserved for coherence */
 #define	SV_NJOIN	0x0002	/* server understands the NJOIN command */
+#define	SV_NMODE	0x0004	/* server knows new MODEs (+e/+I) */
+#define	SV_NCHAN	0x0008	/* server knows new channels -????name */
+				/* ! SV_NJOIN implies ! SV_NCHAN */
+#define	SV_2_10		(SV_29|SV_NJOIN|SV_NMODE|SV_NCHAN)
 
 /* used for sendto_flag */
 
@@ -736,7 +759,8 @@ typedef	struct	{
 #define	SCH_LOCAL	8
 #define	SCH_SERVICE	9
 #define	SCH_DEBUG	10
-#define	SCH_MAX		10
+#define	SCH_AUTH	11
+#define	SCH_MAX		11
 
 /* used for async dns values */
 
@@ -760,6 +784,7 @@ typedef	struct	{
 #define EXITC_SENDQ	'Q'	/* send queue exceeded */
 #define EXITC_RLINE	'r'	/* R-lined */
 #define EXITC_REF	'R'	/* Refused */
+#define EXITC_AREF	'U'	/* Unauthorized by iauth */
 
 /* misc defines */
 
@@ -767,7 +792,7 @@ typedef	struct	{
 #define	UTMP		"/etc/utmp"
 #define	COMMA		","
 
-#define	SAP	struct SOCKADDR *
+#define	SAP	struct sockaddr *
 
 /* IRC client structures */
 

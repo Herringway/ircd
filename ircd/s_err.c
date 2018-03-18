@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_err.c,v 1.13 1997/12/16 22:10:50 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_err.c,v 1.19 1998/09/18 22:02:51 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -40,7 +40,7 @@ static	Numeric	local_replies[] = {
 /* 001 */	{ RPL_WELCOME, ":Welcome to the Internet Relay Network %s" },
 /* 002 */	{ RPL_YOURHOST, ":Your host is %s, running version %s" },
 /* 003 */	{ RPL_CREATED, ":This server was created %s" },
-/* 004 */	{ RPL_MYINFO, "%s %s oirw abiklmnopqstv" },
+/* 004 */	{ RPL_MYINFO, "%s %s aoOirw abeiIklmnoOpqrstv" },
 /* 005 */	{ RPL_BOUNCE, ":Try server %s, port %d" },
 		{ 0, (char *)NULL }
 };
@@ -53,7 +53,7 @@ static	Numeric	numeric_errors[] = {
 /* 405 */	{ ERR_TOOMANYCHANNELS, "%s :You have joined too many channels" },
 /* 406 */	{ ERR_WASNOSUCHNICK, "%s :There was no such nickname" },
 /* 407 */	{ ERR_TOOMANYTARGETS,
-		"%s :%s recipients. No message delivered" },
+		"%s :%s recipients. %s" },
 /* 408 */	{ ERR_NOSUCHSERVICE, "%s :No such service" },
 /* 409 */	{ ERR_NOORIGIN, ":No origin specified" },
 		{ 0, (char *)NULL },
@@ -211,10 +211,10 @@ static	Numeric	numeric_replies[] = {
 		{ 0, (char *)NULL },
 		{ 0, (char *)NULL },
 		{ 0, (char *)NULL },
-		{ 0, (char *)NULL },
-		{ 0, (char *)NULL },
-		{ 0, (char *)NULL },
-		{ 0, (char *)NULL },
+/* 346 */	{ RPL_INVITELIST, "%s %s" },
+/* 347 */       { RPL_ENDOFINVITELIST, "%s :End of Channel Invite List" },
+/* 348 */	{ RPL_EXCEPTLIST, "%s %s" },
+/* 349 */       { RPL_ENDOFEXCEPTLIST, "%s :End of Channel Exception List" },
 		{ 0, (char *)NULL },
 /* 351 */	{ RPL_VERSION, "%s.%s %s :%s" },
 /* 352 */	{ RPL_WHOREPLY, "%s %s %s %s %s %s :%d %s" },
@@ -320,8 +320,8 @@ static	Numeric	numeric_replies[] = {
 /* 245 */	{ RPL_STATSSLINE, "%c %s %s %s 0x%X %d" }, 
 /* 246 */	{ RPL_STATSPING, "%s %d %d %d %d" },
 /* 247 */	{ RPL_STATSBLINE, "%c %s %s %s %d %d" },
-		{ 0, (char *)NULL },
-		{ 0, (char *)NULL },
+		{ 0, (char *)NULL }, /* RPL_STATSDEFINE */
+		{ 0, (char *)NULL }, /* RPL_STATSDEBUG */
 /* 250 */	{ RPL_STATSDLINE, "%c %s %s %s %d %d" },
 /* 251 */	{ RPL_LUSERCLIENT,
 		":There are %d users and %d services on %d servers" },

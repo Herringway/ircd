@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_debug.c,v 1.14.2.2 1998/04/13 02:26:46 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_debug.c,v 1.23 1998/09/23 13:22:15 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -51,7 +51,7 @@ char	serveropts[] = {
 #ifdef	RANDOM_NDELAY
 'd',
 #endif
-#ifdef	LOCOP_REHASH
+#if defined(LOCOP_REHASH) && defined(OPER_REHASH)
 'e',
 #endif
 #ifdef	OPER_REHASH
@@ -77,6 +77,12 @@ char	serveropts[] = {
 #endif
 #ifndef	NO_DEFAULT_INVISIBLE
 'I',
+#endif
+#if defined(LOCOP_DIE) && defined(OPER_DIE)
+'j',
+#endif
+#ifdef	OPER_DIE
+'J',
 #endif
 #ifdef	OPER_KILL
 # ifdef  LOCAL_KILL_ONLY
@@ -106,7 +112,7 @@ char	serveropts[] = {
 #ifdef	CRYPT_LINK_PASSWORD
 'P',
 #endif
-#ifdef	LOCOP_RESTART
+#if defined(LOCOP_RESTART) && defined(OPER_RESTART)
 'r',
 #endif
 #ifdef	OPER_RESTART
@@ -142,12 +148,6 @@ char	serveropts[] = {
 #ifdef	ZIP_LINKS
 'Z',
 #endif
-#ifdef MIRC_KLUDGE
-'$',
-#endif
-#ifdef INET6
-'6',
-#endif
 '\0'};
 
 #ifdef DEBUGMODE
@@ -169,18 +169,10 @@ void	debug(int level, char *form, ...)
 #if ! USE_STDARG
 		syslog(LOG_ERR, form, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10);
 #else
-# if HAVE_VSYSLOG
 		va_list va;
 		va_start(va, form);
 		vsyslog(LOG_ERR, form, va);
 		va_end(va);
-# else
-		va_list va;
-		va_start(va, form);
-		vsprintf(debugbuf, form, va);
-		va_end(va);
-		syslog(LOG_ERR, debugbuf);
-# endif
 #endif
 	    }
 #endif
@@ -205,6 +197,7 @@ void	debug(int level, char *form, ...)
 	    }
 	errno = err;
 }
+#endif /* DEBUGMODE */
 
 /*
  * This is part of the STATS replies. There is no offical numeric for this
@@ -217,7 +210,6 @@ void	send_usage(cptr, nick)
 aClient *cptr;
 char	*nick;
 {
-
 #if HAVE_GETRUSAGE
 	struct	rusage	rus;
 	time_t	secs, rup;
@@ -299,11 +291,12 @@ char	*nick;
 		   smin, ssec);
 # endif /* HAVE_TIMES */
 #endif /* HAVE_GETRUSAGE */
-	sendto_one(cptr, ":%s %d %s :Reads %d Writes %d",
-		   me.name, RPL_STATSDEBUG, nick, readcalls, writecalls);
 	sendto_one(cptr, ":%s %d %s :DBUF alloc %d blocks %d",
 		   me.name, RPL_STATSDEBUG, nick, istat.is_dbufuse,
 		   istat.is_dbufnow);
+#ifdef DEBUGMODE
+	sendto_one(cptr, ":%s %d %s :Reads %d Writes %d",
+		   me.name, RPL_STATSDEBUG, nick, readcalls, writecalls);
 	sendto_one(cptr,
 		   ":%s %d %s :Writes:  <0 %d 0 %d <16 %d <32 %d <64 %d",
 		   me.name, RPL_STATSDEBUG, nick,
@@ -312,26 +305,36 @@ char	*nick;
 		   ":%s %d %s :<128 %d <256 %d <512 %d <1024 %d >1024 %d",
 		   me.name, RPL_STATSDEBUG, nick,
 		   writeb[5], writeb[6], writeb[7], writeb[8], writeb[9]);
+#endif
 	return;
 }
-#endif
 
 void	send_defines(cptr, nick)
 aClient *cptr;
 char	*nick;
 {
+    	sendto_one(cptr, ":%s %d %s :HUB:%s P_S:%d MS:%d", 
+		   ME, RPL_STATSDEFINE, nick,
 #ifdef HUB
-    	sendto_one(cptr, ":%s %d %s :HUB:%d MS:%d", 
-		   ME, RPL_STATSDEFINE, nick, HUB, MAXSERVERS);
+		   "yes",
+#else
+		   "no",
 #endif
+#ifdef PREFER_SERVER
+		   PREFER_SERVER,
+#else
+		   -1,
+#endif
+		   MAXSERVERS);
     	sendto_one(cptr,
 		   ":%s %d %s :LQ:%d MXC:%d TS:%d HRD:%d HGL:%d WWD:%d CTO:%d",
 		   ME, RPL_STATSDEFINE, nick, LISTENQUEUE, MAXCONNECTIONS,
 		   TIMESEC, HANGONRETRYDELAY, HANGONGOODLINK, WRITEWAITDELAY,
 		   CONNECTTIMEOUT);
-    	sendto_one(cptr, ":%s %d %s :KCTL:%d DCTL:%d CF:%d MCPU:%d",
+    	sendto_one(cptr, ":%s %d %s :KCTL:%d DCTL:%d LDCTL: %d CF:%d MCPU:%d",
 		   ME, RPL_STATSDEFINE, nick, KILLCHASETIMELIMIT,
-		   DELAYCHASETIMELIMIT, CLIENT_FLOOD, MAXCHANNELSPERUSER);
+		   DELAYCHASETIMELIMIT, LDELAYCHASETIMELIMIT,
+		   CLIENT_FLOOD, MAXCHANNELSPERUSER);
 	sendto_one(cptr, ":%s %d %s :H:%d N:%d U:%d R:%d T:%d C:%d P:%d K:%d",
 		   ME, RPL_STATSDEFINE, nick, HOSTLEN, NICKLEN, USERLEN,
 		   REALLEN, TOPICLEN, CHANNELLEN, PASSWDLEN, KEYLEN);
@@ -490,7 +493,7 @@ int	debug;
 				d_chu++;
 			for (link = chptr->invites; link; link = link->next)
 				d_chi++;
-			for (link = chptr->banlist; link; link = link->next)
+			for (link = chptr->mlist; link; link = link->next)
 			    {
 				d_chb++;
 				d_chbm += strlen(link->value.cp) + 1;
@@ -576,12 +579,13 @@ int	debug;
 			   d_cl*sizeof(aClass));
 
 	sendto_one(cptr,
-		   ":%s %d %s :Channels %d(%d) Bans %d(%d) History %d(%d)",
-		   me.name, RPL_STATSDEBUG, nick, ch, chm, chb, chbm,chh,chhm);
+   ":%s %d %s :Channels %d(%d) Modes %d(%d) History %d(%d) Cache %d(%d)",
+		   me.name, RPL_STATSDEBUG, nick, ch, chm, chb, chbm, chh,
+		   chhm, istat.is_cchan, istat.is_cchanmem);
 	if (debug && (ch != d_ch || chm != d_chm || chb != d_chb
 		      || chbm != d_chbm || chh != d_chh || chhm != d_chhm))
 		sendto_one(cptr,
-	       ":%s %d %s :Channels %d(%d) Bans %d(%d) History %d(%d) [REAL]",
+	       ":%s %d %s :Channels %d(%d) Modes %d(%d) History %d(%d) [REAL]",
 			   me.name, RPL_STATSDEBUG, nick, d_ch, d_chm, d_chb,
 			   d_chbm, d_chh, d_chhm);
 	sendto_one(cptr, ":%s %d %s :Channel members %d(%d) invite %d(%d)",

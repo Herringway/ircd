@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_user.c,v 1.38.2.1 1998/05/17 20:29:34 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_user.c,v 1.55 1998/09/23 12:56:13 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -38,6 +38,7 @@ static int user_modes[]	     = { FLAGS_OPER, 'o',
 				 FLAGS_INVISIBLE, 'i',
 				 FLAGS_WALLOP, 'w',
 				 FLAGS_RESTRICTED, 'r',
+				 FLAGS_AWAY, 'a',
 				 0, 0 };
 
 /*
@@ -192,6 +193,8 @@ int	server, parc;
 		    }
 	 if (acptr)
 	    {
+		if (!IsRegistered(acptr))
+			return HUNTED_ISME;
 		if (IsMe(acptr) || MyClient(acptr) || MyService(acptr))
 			return HUNTED_ISME;
 		if (match(acptr->name, parv[server]))
@@ -340,6 +343,20 @@ char	*nick, *username;
 	    {
 		char *reason = NULL;
 
+#if defined(USE_IAUTH)
+		/* this should not be needed, but there's a bug.. -kalt */
+		if (*cptr->username == '\0')
+		    {
+			sendto_flag(SCH_AUTH,
+				    "Ouch! Null username for %s (%d %X)",
+				    get_client_name(cptr, TRUE), cptr->fd,
+				    cptr->flags);
+			sendto_iauth("%d E Null username [%s] %X", cptr->fd,
+				     get_client_name(cptr, TRUE), cptr->flags);
+			return exit_client(cptr, sptr, &me,
+					   "Fatal Bug - Try Again");
+		    }
+#endif
 		/*
 		** the following insanity used to be after check_client()
 		** but check_client()->attach_Iline() now needs to know the
@@ -390,6 +407,55 @@ char	*nick, *username;
 		user->username[USERLEN] = '\0';
 		/* eos */
 
+		if (sptr->exitc == EXITC_AREF)
+		    {
+			char *masked = NULL, *format;
+
+			/*
+			** All this masking is rather ugly but prompted by
+			** the fact that the hostnames should not be made
+			** available in realtime. (first iauth module using
+			** this detects open proxies)
+			** Then again, if detailed information is needed,
+			** the admin should check logs and/or the module
+			** should be changed to send details to &AUTH.
+			*/
+			if (sptr->hostp)
+			    {
+				masked = index(sptr->hostp->h_name, '.');
+				format = "Denied connection from ???%s.";
+			    }
+			else
+			    {
+				char *dot;
+
+				masked = inetntoa((char *)&sptr->ip);
+				dot = rindex(masked, '.');
+				if (dot)
+					*(dot+1) = '\0';
+				else
+					masked = NULL;
+				format = "Denied connection from %s???.";
+			    }
+			if (masked) /* just to be safe */
+				sendto_flag(SCH_LOCAL, format, masked);
+			else
+				sendto_flag(SCH_LOCAL, "Denied connection.");
+#if defined(USE_SYSLOG) && defined(SYSLOG_CONN)
+			syslog(LOG_NOTICE, "%s ( %s ): <none>@%s [%s] %c\n",
+			       myctime(sptr->firsttime), " Denied  ",
+			       (IsUnixSocket(sptr)) ? me.sockhost :
+			       ((sptr->hostp) ? sptr->hostp->h_name :
+				sptr->sockhost), sptr->auth, sptr->exitc);
+#endif		    
+#if defined(FNAME_CONNLOG) || defined(USE_SERVICES)
+			sendto_flog(sptr, " Denied  ", 0, "<none>",
+				    (IsUnixSocket(sptr)) ? me.sockhost :
+				    ((sptr->hostp) ? sptr->hostp->h_name :
+				    sptr->sockhost));
+#endif
+			return exit_client(cptr, sptr, &me, "Denied Access");
+		    }
 		if ((i = check_client(sptr)))
 		    {
 			struct msg_set { char *shortm; char *longm; };
@@ -615,6 +681,7 @@ char	*parv[];
 	aClient *acptr;
 	int	delayed = 0;
 	char	nick[NICKLEN+2], *s, *user, *host;
+	Link	*lp;
 
 	if (IsService(sptr))
    	    {
@@ -732,7 +799,7 @@ char	*parv[];
 	** it has been free for a while here
 	*/
 	if (!(acptr = find_client(nick, NULL)) &&
-	    (IsServer(cptr) ||
+	    (IsServer(cptr) || !(bootopt & BOOT_PROT) ||
 	     !(delayed = find_history(nick, (long)DELAYCHASETIMELIMIT))))
 		goto nickkilldone;  /* No collisions, all clear... */
 	/*
@@ -892,6 +959,10 @@ nickkilldone:
 					   err_str(ERR_RESTRICTED, nick));
 				return 2;
 			    }
+			/* is the user banned on any channel ? */
+			for (lp = sptr->user->channel; lp; lp = lp->next)
+				if (can_send(sptr, lp->value.chptr) ==MODE_BAN)
+					break;
 		}
 		/*
 		** Client just changing his/her nick. If he/she is
@@ -941,7 +1012,10 @@ nickkilldone:
 	**  Finally set new nick name.
 	*/
 	(void)add_to_client_hash_table(nick, sptr);
-	return 3;
+	if (lp)
+		return 15;
+	else
+		return 3;
 }
 
 /*
@@ -995,7 +1069,7 @@ int	parc, notice;
 		    if (!notice)
 			    sendto_one(sptr, err_str(ERR_TOOMANYTARGETS,
 						     parv[0]),
-				       "Too many", nick); 
+				       "Too many",nick,"No Message Delivered");
 		    continue;      
 		}   
 		/*
@@ -1004,9 +1078,11 @@ int	parc, notice;
 		if ((acptr = find_person(nick, NULL)))
 		    {
 			if (!notice && MyConnect(sptr) &&
-			    acptr->user && acptr->user->away)
+			    acptr->user && (acptr->user->flags & FLAGS_AWAY))
 				sendto_one(sptr, rpl_str(RPL_AWAY, parv[0]),
-					   acptr->name, acptr->user->away);
+					   acptr->name,
+					   (acptr->user->away) ? 
+					   acptr->user->away : "Gone");
 			sendto_prefix_one(acptr, sptr, ":%s %s %s :%s",
 					  parv[0], cmd, nick, parv[2]);
 			continue;
@@ -1014,7 +1090,7 @@ int	parc, notice;
 		/*
 		** channel msg?
 		*/
-		if ((IsPerson(sptr) || IsService(sptr)) &&
+		if ((IsPerson(sptr) || IsService(sptr) || IsServer(sptr)) &&
 		    (chptr = find_channel(nick, NullChn)))
 		    {
 			if (can_send(sptr, chptr) == 0)
@@ -1129,7 +1205,8 @@ int	parc, notice;
 				else if (!notice)
 					sendto_one(sptr, err_str(
 						   ERR_TOOMANYTARGETS,
-						   parv[0]), "Duplicate",nick);
+						   parv[0]), "Duplicate", nick,
+						   "No Message Delivered");
 				continue;
 			    }
 		    }
@@ -1151,7 +1228,8 @@ int	parc, notice;
 				else if (!notice)
 					sendto_one(sptr, err_str(
 						   ERR_TOOMANYTARGETS,
-						   parv[0]), "Duplicate",nick);
+						   parv[0]), "Duplicate", nick,
+						   "No Message Delivered");
 				continue;
 			    }
 		    }
@@ -1202,7 +1280,7 @@ Link *lp;
 	char	status[5];
 	int	i = 0;
 
-	if (acptr->user->away)
+	if (acptr->user->flags & FLAGS_AWAY)
 		status[i++] = 'G';
 	else
 		status[i++] = 'H';
@@ -1212,7 +1290,7 @@ Link *lp;
 		lp = find_user_link(repchan->members, acptr);
 	if (lp != NULL)
 	    {
-		if (lp->flags & CHFL_CHANOP)
+		if (lp->flags & (CHFL_UNIQOP|CHFL_CHANOP))
 			status[i++] = '@';
 		else if (lp->flags & CHFL_VOICE)
 			status[i++] = '+';
@@ -1544,7 +1622,7 @@ char	*parv[];
 						len = 0;
 					    }
 					if (is_chan_op(acptr, chptr))
-						*(buf + len++) = '@';
+					    *(buf + len++) = '@';
 					else if (has_voice(acptr, chptr))
 						*(buf + len++) = '+';
 					if (len)
@@ -1563,9 +1641,10 @@ char	*parv[];
 				   name, user->server,
 				   a2cptr?a2cptr->info:"*Not On This Net*");
 
-			if (user->away)
+			if (user->flags & FLAGS_AWAY)
 				sendto_one(sptr, rpl_str(RPL_AWAY, parv[0]),
-					   name, user->away);
+					   name, (user->away) ? user->away :
+					   "Gone");
 
 			if (IsAnOper(acptr))
 				sendto_one(sptr, rpl_str(RPL_WHOISOPERATOR,
@@ -1729,7 +1808,15 @@ user_finish:
 	    }
 	user->servp->userlist = user;
 	
-	strncpyzt(sptr->info, realname, sizeof(sptr->info));
+	if (sptr->info != DefInfo)
+		MyFree(sptr->info);
+	if (strlen(realname) > REALLEN)
+		realname[REALLEN] = '\0';
+	sptr->info = mystrdup(realname);
+#if defined(USE_IAUTH)
+	if (MyConnect(sptr))
+		sendto_iauth("%d U %.*s", sptr->fd, USERLEN+1, username);
+#endif
 	if (sptr->name[0]) /* NICK already received, now we have USER... */
 	    {
 		if ((parc == 6) && IsServer(cptr)) /* internal m_user() */
@@ -1981,9 +2068,6 @@ char	*parv[];
 	Reg	char	*away, *awy2 = parv[1];
 	int	len;
 
-	if (!MyConnect(sptr))	/* Since 2.9 we know only local AWAY */
-		return 0;	/* "WHOIS server nick" still works */
-
 	away = sptr->user->away;
 
 	if (parc < 2 || !*awy2)	/* Marking as not away */
@@ -1995,11 +2079,17 @@ char	*parv[];
 			MyFree(away);
 			sptr->user->away = NULL;
 		    }
-		sendto_one(sptr, rpl_str(RPL_UNAWAY, parv[0]));
+		if (sptr->user->flags & FLAGS_AWAY)
+			sendto_serv_butone(cptr, ":%s MODE %s :-a", parv[0],
+					   parv[0]);
+		/* sendto_serv_butone(cptr, ":%s AWAY", parv[0]); */
+		if (MyConnect(sptr))
+			sendto_one(sptr, rpl_str(RPL_UNAWAY, parv[0]));
 #ifdef	USE_SERVICES
 		check_services_butone(SERVICE_WANT_AWAY, NULL, sptr,
 				      ":%s AWAY", parv[0]);
 #endif
+		sptr->user->flags &= ~FLAGS_AWAY;
 		return 1;
 	    }
 
@@ -2011,6 +2101,7 @@ char	*parv[];
 		awy2[TOPICLEN] = '\0';
 	    }
 	len++;
+	/* sendto_serv_butone(cptr, ":%s AWAY :%s", parv[0], awy2); */
 #ifdef	USE_SERVICES
 	check_services_butone(SERVICE_WANT_AWAY, NULL, sptr,
 			      ":%s AWAY :%s", parv[0], awy2);
@@ -2027,11 +2118,16 @@ char	*parv[];
 		istat.is_away++;
 		istat.is_awaymem += len;
 		away = (char *)MyMalloc(len);
+		sendto_serv_butone(cptr, ":%s MODE %s :+a", parv[0], parv[0]);
 	    }
 
-	sptr->user->away = away;
-	(void)strcpy(away, awy2);
-	sendto_one(sptr, rpl_str(RPL_NOWAWAY, parv[0]));
+	sptr->user->flags |= FLAGS_AWAY;
+	if (MyConnect(sptr))
+	    {
+		sptr->user->away = away;
+		(void)strcpy(away, awy2);
+		sendto_one(sptr, rpl_str(RPL_NOWAWAY, parv[0]));
+	    }
 	return 2;
 }
 
@@ -2169,7 +2265,7 @@ char	*parv[];
 #endif
 		return 1;
 	    }
-	else if (IsOper(sptr))
+	else if (IsAnOper(sptr))
 	    {
 		if (MyConnect(sptr))
 			sendto_one(sptr, rpl_str(RPL_YOUREOPER, parv[0]));
@@ -2178,13 +2274,7 @@ char	*parv[];
 	if (!(aconf = find_conf_exact(name, sptr->username, sptr->sockhost,
 				      CONF_OPS)) &&
 	    !(aconf = find_conf_exact(name, sptr->username,
-#ifdef INET6
-				      (char *)inetntop(AF_INET6,
-						       (char *)&cptr->ip,
-						       mydummy, MYDUMMY_SIZE),
-#else
 				      (char *)inetntoa((char *)&cptr->ip),
-#endif
 				      CONF_OPS)))
 	    {
 		sendto_one(sptr, err_str(ERR_NOOPERHOST, parv[0]));
@@ -2238,8 +2328,7 @@ char	*parv[];
 		sendto_flag(SCH_NOTICE, "%s (%s@%s) is now operator (%c)",
 			    parv[0], sptr->user->username, sptr->user->host,
 			   IsOper(sptr) ? 'o' : 'O');
-		if (IsOper(sptr))
-			send_umode_out(cptr, sptr, old);
+		send_umode_out(cptr, sptr, old);
  		sendto_one(sptr, rpl_str(RPL_YOUREOPER, parv[0]));
 #if !defined(CRYPT_OPER_PASSWORD) && (defined(FNAME_OPERLOG) ||\
     (defined(USE_SYSLOG) && defined(SYSLOG_OPER)))
@@ -2250,11 +2339,7 @@ char	*parv[];
 			name, encr,
 		       parv[0], sptr->user->username, sptr->user->host,
 		       sptr->auth, IsUnixSocket(sptr) ? sptr->sockhost :
-#ifdef INET6
-                       inet_ntop(AF_INET6, (char *)&sptr->ip), mydummy, MYDUMMY_SIZE);
-#else
                        inetntoa((char *)&sptr->ip));
-#endif
 #endif
 #ifdef FNAME_OPERLOG
 	      {
@@ -2277,12 +2362,7 @@ char	*parv[];
 			  myctime(timeofday), name, encr,
 			  parv[0], sptr->user->username, sptr->user->host,
 			  sptr->auth, IsUnixSocket(sptr) ? sptr->sockhost :
-#ifdef INET6
-			  inetntop(AF_INET6, (char *)&sptr->ip, mydummy,
-				   MYDUMMY_SIZE));
-#else
 			  inetntoa((char *)&sptr->ip));
-#endif
 		  (void)alarm(3);
 		  (void)write(logfile, buf, strlen(buf));
 		  (void)alarm(0);
@@ -2316,8 +2396,8 @@ char	*parv[];
 ** m_pass
 **	parv[0] = sender prefix
 **	parv[1] = password
-**	parv[2] = version (server only)
-**	parv[3] = server options (server only)                              
+**	parv[2] = protocol & server versions (server only)
+**	parv[3] = server id & options (server only)
 **	parv[4] = (optional) link options (server only)                  
 */
 int	m_pass(cptr, sptr, parc, parv)
@@ -2333,17 +2413,23 @@ char	*parv[];
 		return 1;
 	    }
 	/* Temporarily store PASS pwd *parameters* into info field */
-	if (parc > 2 && parv[2]) {
-		strncpyzt(cptr->info, parv[2], 11); 
-		if (parc > 3 && parv[3]) {
-			strncpy(cptr->info+12, parv[3], 30);
-			cptr->info[42] = '\0';
-			if (parc > 4 && parv[4]) {
-				strncpy(cptr->info+44, parv[4], 5);
-				cptr->info[49] = '\0';
-			}
-		}
-	}
+	if (parc > 2 && parv[2])
+	    {
+		strncpyzt(buf, parv[2], 15); 
+		if (parc > 3 && parv[3])
+		    {
+			strcat(buf, " ");
+			strncat(buf, parv[3], 100);
+			if (parc > 4 && parv[4])
+			    {
+				strcat(buf, " ");
+				strncat(buf, parv[4], 5);
+			    }
+		    }
+		if (cptr->info != DefInfo)
+			MyFree(cptr->info);
+		cptr->info = mystrdup(buf);
+	    }
 	strncpyzt(cptr->passwd, password, sizeof(cptr->passwd));
 	return 1;
     }
@@ -2383,7 +2469,7 @@ char	*parv[];
 				(void)strcat(buf, " ");
 			SPRINTF(buf2, "%s%s=%c%s@%s", acptr->name,
 				IsAnOper(acptr) ? "*" : "",
-				(acptr->user->away) ? '-' : '+',
+				(acptr->user->flags & FLAGS_AWAY) ? '-' : '+',
 				acptr->user->username, acptr->user->host);
 			(void)strncat(buf, buf2, sizeof(buf) - len);
 			len += strlen(buf2);
@@ -2536,6 +2622,28 @@ char	*parv[];
 			case '\r' :
 			case '\t' :
 				break;
+			case 'a' : /* fall through case */
+				/* users should use the AWAY message */
+				if (cptr && !IsServer(cptr))
+					break;
+				if (what == MODE_DEL && sptr->user->away)
+				    {
+					istat.is_away--;
+					istat.is_awaymem -= (strlen(sptr->user->away) + 1);
+					MyFree(sptr->user->away);
+					sptr->user->away = NULL;
+#ifdef  USE_SERVICES
+				check_services_butone(SERVICE_WANT_AWAY,
+						      sptr->user->server, sptr,
+						      ":%s AWAY", parv[0]);
+#endif
+				    }
+#ifdef  USE_SERVICES
+				if (what == MODE_ADD)
+				check_services_butone(SERVICE_WANT_AWAY,
+						      sptr->user->server, sptr,
+						      ":%s AWAY :", parv[0]);
+#endif
 			default :
 				for (s = user_modes; (flag = *s); s += 2)
 					if (*m == (char)(*(s+1)))
@@ -2611,6 +2719,16 @@ char	*parv[];
 				      parv[0]);
 #endif
 	    }
+	else if (MyConnect(sptr) && !IsLocOp(sptr) && (setflags & FLAGS_LOCOP))
+	    {
+		istat.is_oper--;
+#ifdef USE_SERVICES
+		check_services_butone(SERVICE_WANT_OPER, sptr->user->server,
+				      sptr, ":%s MODE %s :-O", parv[0],     
+				      parv[0]);
+#endif                               
+	    }                         
+
 	return penalty;
 }
 	

@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: ircd.c,v 1.14.2.1 1998/04/05 02:40:21 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: ircd.c,v 1.34 1998/09/24 14:41:54 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -39,12 +39,14 @@ int	rehashed = 0;
 int	portnum = -1;		    /* Server port number, listening this */
 char	*configfile = CONFIGFILE;	/* Server configuration file */
 int	debuglevel = -1;		/* Server debug level */
-int	bootopt = 0;			/* Server boot option flags */
+int	bootopt = BOOT_PROT|BOOT_STRICTPROT;	/* Server boot option flags */
 char	*debugmode = "";		/*  -"-    -"-   -"-   -"- */
 char	*sbrk0;				/* initial sbrk(0) */
 char	*tunefile = TPATH;
 static	int	dorehash = 0,
-		dorestart = 0;
+		dorestart = 0,
+		restart_iauth = 0;
+
 static	char	*dpath = DPATH;
 
 time_t	nextconnect = 1;	/* time for next try_connections call */
@@ -89,6 +91,25 @@ int s;
 	exit(-1);
 }
 
+#if defined(USE_IAUTH)
+RETSIGTYPE s_slave(s)
+int s;
+{
+# if POSIX_SIGNALS
+	struct	sigaction act;
+
+	act.sa_handler = s_slave;
+	act.sa_flags = 0;
+	(void)sigemptyset(&act.sa_mask);
+	(void)sigaddset(&act.sa_mask, SIGUSR1);
+	(void)sigaction(SIGUSR1, &act, NULL);
+# else
+	(void)signal(SIGUSR1, s_slave);
+# endif
+	restart_iauth = 1;
+}
+#endif
+
 static RETSIGTYPE s_rehash(s)
 int s;
 {
@@ -110,9 +131,11 @@ void	restart(mesg)
 char	*mesg;
 {
 #ifdef	USE_SYSLOG
-	(void)syslog(LOG_WARNING, "Restarting Server because: %s", mesg);
+	(void)syslog(LOG_WARNING, "Restarting Server because: %s (%u)", mesg,
+		     (u_int)sbrk((size_t)0)-(u_int)sbrk0);
 #endif
-	sendto_flag(SCH_NOTICE, "Restarting server because: %s", mesg);
+	sendto_flag(SCH_NOTICE, "Restarting server because: %s (%u)", mesg,
+		    (u_int)sbrk((size_t)0)-(u_int)sbrk0);
 	server_reboot();
 }
 
@@ -137,7 +160,9 @@ void	server_reboot()
 {
 	Reg	int	i;
 
-	sendto_flag(SCH_NOTICE, "Aieeeee!!!  Restarting server...");
+	sendto_flag(SCH_NOTICE, "Aieeeee!!!  Restarting server... (%u)",
+		    (u_int)sbrk((size_t)0)-(u_int)sbrk0);
+
 	Debug((DEBUG_NOTICE,"Restarting server..."));
 	flush_connections(me.fd);
 	/*
@@ -146,6 +171,21 @@ void	server_reboot()
 	*/
 #ifdef USE_SYSLOG
 	(void)closelog();
+#endif
+#if defined(USE_IAUTH)
+#if 0
+	if (adfd >= 0)
+	    {
+		/* if iauth is running, it'll become a zombie unless we wait
+		 * for it. (Of course, if the alarm rings, we haven't waited
+		 * long enough). -kalt
+		 */
+		close(adfd);
+		alarm(1);
+		wait(NULL);
+		alarm(0);
+	    }
+#endif
 #endif
 	for (i = 3; i < MAXCONNECTIONS; i++)
 		(void)close(i);
@@ -157,12 +197,12 @@ void	server_reboot()
 	ircd_writetune(tunefile);
 	if (!(bootopt & (BOOT_INETD|BOOT_OPER)))
 	    {
-		(void)execv(MYNAME, myargv);
+		(void)execv(SPATH, myargv);
 #ifdef USE_SYSLOG
 		/* Have to reopen since it has been closed above */
 		
 		openlog(myargv[0], LOG_PID|LOG_NDELAY, LOG_FACILITY);
-		syslog(LOG_CRIT, "execv(%s,%s) failed: %m\n", MYNAME,
+		syslog(LOG_CRIT, "execv(%s,%s) failed: %m\n", SPATH,
 		       myargv[0]);
 		closelog();
 #endif
@@ -271,17 +311,17 @@ time_t	currenttime;
 	if (!lastsort || lastsort < currenttime)
 	    {
 		for (aconf = conf; aconf; aconf = aconf->next)
-			if (!(cp = aconf->ping) || !cp->seq || !cp->recvd)
+			if (!(cp = aconf->ping) || !cp->seq || !cp->recv)
 				aconf->pref = -1;
 			else
 			    {
-				f = (double)cp->recvd / (double)cp->seq;
+				f = (double)cp->recv / (double)cp->seq;
 				f2 = pow(f, (double)20.0);
 				if (f2 < (double)0.001)
 					f = (double)0.001;
 				else
 					f = f2;
-				f2 = (double)cp->ping / (double)cp->recvd;
+				f2 = (double)cp->ping / (double)cp->recv;
 				f = f2 / f;
 				if (f > 100000.0)
 					f = 100000.0;
@@ -381,7 +421,8 @@ time_t	currenttime;
 						  "Ping timeout");
 			    }
 			if (!IsRegistered(cptr) && 
-			    (DoingDNS(cptr) || DoingAuth(cptr)))
+			    (DoingDNS(cptr) || DoingAuth(cptr) ||
+			     DoingXAuth(cptr)))
 			    {
 				if (cptr->authfd >= 0)
 				    {
@@ -394,7 +435,12 @@ time_t	currenttime;
 					get_client_name(cptr,TRUE)));
 				del_queries((char *)cptr);
 				ClearAuth(cptr);
+#if defined(USE_IAUTH)
+				if (DoingDNS(cptr) || DoingXAuth(cptr))
+					sendto_iauth("%d T", cptr->fd);
+#endif
 				ClearDNS(cptr);
+				ClearXAuth(cptr);
 				SetAccess(cptr);
 				cptr->firsttime = currenttime;
 				continue;
@@ -417,7 +463,7 @@ time_t	currenttime;
 					    "Kill line active for %s",
 					    get_client_name(cptr, FALSE));
 				cptr->exitc = EXITC_KLINE;
-				if (reason)
+				if (!BadPtr(reason))
 					sprintf(buf, "Kill line active: %.80s",
 						reason);
 				(void)exit_client(cptr, cptr, &me, (reason) ?
@@ -486,6 +532,8 @@ aClient	*mp;
 	(void)get_my_name(mp, mp->sockhost, sizeof(mp->sockhost)-1);
 	if (mp->name[0] == '\0')
 		strncpyzt(mp->name, mp->sockhost, sizeof(mp->name));
+	if (me.info == DefInfo)
+		me.info = mystrdup("IRCers United");
 	mp->lasttime = mp->since = mp->firsttime = time(NULL);
 	mp->hopcount = 0;
 	mp->authfd = -1;
@@ -522,7 +570,7 @@ aClient	*mp;
 static	int	bad_command()
 {
   (void)printf(
-	 "Usage: ircd [-a] [-b] [-c] [-d path]%s [-h servername] [-q] [-o] [-i] [-T tunefile] [-v] %s\n",
+	 "Usage: ircd [-a] [-b] [-c] [-d path]%s [-h servername] [-q] [-o] [-i] [-T tunefile] [-p (strict|on|off)] [-v] %s\n",
 #ifdef CMDLINE_CONFIG
 	 " [-f config]",
 #else
@@ -593,7 +641,6 @@ char	*argv[];
 	(void)umask(077);                /* better safe than sorry --SRB */
 	bzero((char *)&me, sizeof(me));
 
-	setup_signals();
 	version = make_version();	/* Generate readable version string */
 
 	/*
@@ -645,23 +692,33 @@ char	*argv[];
 			break;
 #endif
 		    case 'h':
+			if (*p == '\0')
+				bad_command();
 			strncpyzt(me.name, p, sizeof(me.name));
 			break;
 		    case 'i':
-			/* otherwise people wonder why it doesn't work,
-			   and since they don't RTFS (see below) -krys */
-			(void)fprintf(stderr,
-				      "%s: inetd support is not functional\n",
-				      myargv[0]);
-			exit(0);
-
 			bootopt |= BOOT_INETD|BOOT_AUTODIE;
 		        break;
+		    case 'p':
+			if (!strcmp(p, "strict"))
+				bootopt |= BOOT_PROT|BOOT_STRICTPROT;
+			else if (!strcmp(p, "on"))
+				bootopt |= BOOT_PROT;
+			else if (!strcmp(p, "off"))
+				bootopt &= ~(BOOT_PROT|BOOT_STRICTPROT);
+			else
+				bad_command();
+			break;
+		    case 's':
+			bootopt |= BOOT_NOIAUTH;
+			break;
 		    case 't':
                         (void)setuid((uid_t)uid);
 			bootopt |= BOOT_TTY;
 			break;
 		    case 'T':
+			if (*p == '\0')
+				bad_command();
 			tunefile = p;
 			break;
 		    case 'v':
@@ -700,6 +757,34 @@ char	*argv[];
 		exit(-1);
 	    }
 #endif
+#if defined(USE_IAUTH)
+	if ((bootopt & BOOT_NOIAUTH) == 0)
+		switch (vfork())
+		    {
+		case -1:
+			fprintf(stderr, "%s: Unable to fork!", myargv[0]);
+			exit(-1);
+		case 0:
+			close(0); close(1); close(3);
+			if (execl(APATH, APATH, "-X", NULL) < 0)
+				_exit(-1);
+		default:
+		    {
+			int rc;
+			
+			(void)wait(&rc);
+			if (rc != 0)
+			    {
+				fprintf(stderr,
+					"%s: error: unable to find \"%s\".\n",
+					myargv[0], APATH);
+				exit(-1);
+			    }
+		    }
+		    }
+#endif
+
+	setup_signals();
 
 #ifndef IRC_UID
 	if ((uid != euid) && !euid)
@@ -738,13 +823,13 @@ char	*argv[];
 	if (argc > 0)
 		bad_command(); /* This exits out */
 
+	initstats();
 	ircd_readtune(tunefile);
 	timeofday = time(NULL);
 #ifdef	CACHED_MOTD
 	motd = NULL;
 	read_motd(MPATH);
 #endif
-	initstats();
 	inithashtables();
 	initlists();
 	initclass();
@@ -762,19 +847,38 @@ char	*argv[];
 	    {
 		Debug((DEBUG_FATAL, "Failed in reading configuration file %s",
 			configfile));
+		/* no can do.
 		(void)printf("Couldn't open configuration file %s\n",
 			configfile);
+		*/
 		exit(-1);
+	    }
+	else
+	    {
+		aClient *acptr;
+		int i;
+
+                for (i = 0; i <= highest_fd; i++)
+                    {   
+                        if (!(acptr = local[i]))
+                                continue;
+			if (IsListening(acptr))
+				break;
+			acptr = NULL;
+		    }
+		/* exit if there is nothing to listen to */
+		if (acptr == NULL)
+			exit(-1);
 	    }
 
 	dbuf_init();
 	setup_me(&me);
 	check_class();
 	ircd_writetune(tunefile);
-/* This cannot be right anymore..
 	if (bootopt & BOOT_INETD)
 	    {
 		aClient	*tmp;
+		aConfItem *aconf;
 
 		tmp = make_client(NULL);
 
@@ -782,12 +886,32 @@ char	*argv[];
 		tmp->flags = FLAGS_LISTEN;
 		tmp->acpt = tmp;
 		tmp->from = tmp;
-		SetMe(tmp);
-		(void)strcpy(tmp->name, "*");
-		(void)inetport(tmp, "", "*", 0);
-		local[0] = tmp;
+	        tmp->firsttime = time(NULL);
+
+                SetMe(tmp);
+
+                (void)strcpy(tmp->name, "*");
+
+                if (inetport(tmp, 0, "0.0.0.0", 0))
+                        tmp->fd = -1;
+		if (tmp->fd == 0) 
+		    {
+			aconf = make_conf();
+			aconf->status = CONF_LISTEN_PORT;
+			aconf->clients++;
+	                aconf->next = conf;
+        	        conf = aconf;
+
+                        tmp->confs = make_link();
+        	        tmp->confs->next = NULL;
+	               	tmp->confs->value.aconf = aconf;
+	                add_fd(tmp->fd, &fdas);
+	                add_fd(tmp->fd, &fdall);
+	                set_non_blocking(tmp->fd, tmp);
+		    }
+		else
+		    exit(5);
 	    }
-*/
 	if (bootopt & BOOT_OPER)
 	    {
 		aClient *tmp = add_connection(&me, 0);
@@ -813,8 +937,11 @@ char	*argv[];
 time_t	io_loop(delay)
 time_t	delay;
 {
+#ifdef PREFER_SERVER
+	static	time_t	nextc = 0;
+#endif
 #ifdef HUB
-	static	time_t	nextc = 0, nextactive = 0, lastl = 0;
+	static	time_t	nextactive = 0, lastl = 0;
 #endif
 
 	/*
@@ -864,14 +991,14 @@ time_t	delay;
 	else
 		delay = MIN(delay, TIMESEC);
 
-#ifdef	HUB
+#if defined(PREFER_SERVER)
 	(void)read_message(1, &fdas);
 	flush_connections(me.fd);
 	Debug((DEBUG_DEBUG, "delay for %d", delay));
 	if (timeofday > nextc)
 	    {
 		(void)read_message(delay, &fdall);
-		nextc = timeofday + HUB;
+		nextc = timeofday;
 	    }
 /*
 	else
@@ -919,6 +1046,11 @@ time_t	delay;
 		ircd_writetune(tunefile);
 		(void)rehash(&me, &me, 1);
 		dorehash = 0;
+	    }
+	if (restart_iauth)
+	    {
+		start_iauth();
+		restart_iauth = 0;
 	    }
 	/*
 	** Flush output buffers on all connections now if they
@@ -1015,24 +1147,42 @@ static	void	setup_signals()
 	act.sa_handler = s_die;
 	(void)sigaddset(&act.sa_mask, SIGTERM);
 	(void)sigaction(SIGTERM, &act, NULL);
+# if defined(USE_IAUTH)
+	act.sa_handler = s_slave;
+	(void)sigaddset(&act.sa_mask, SIGUSR1);
+	(void)sigaction(SIGUSR1, &act, NULL);
+	act.sa_handler = SIG_IGN;
+#  ifdef SA_NOCLDWAIT
+        act.sa_flags = SA_NOCLDWAIT;
+#  else
+        act.sa_flags = 0;
+#  endif
+	(void)sigaddset(&act.sa_mask, SIGCHLD);
+	(void)sigaction(SIGCHLD, &act, NULL);
+# endif
 
-#else
+#else /* POSIX_SIGNALS */
+
 # ifndef	HAVE_RELIABLE_SIGNALS
 	(void)signal(SIGPIPE, dummy);
 #  ifdef	SIGWINCH
 	(void)signal(SIGWINCH, dummy);
 #  endif
-# else
+# else /* HAVE_RELIABLE_SIGNALS */
 #  ifdef	SIGWINCH
 	(void)signal(SIGWINCH, SIG_IGN);
 #  endif
 	(void)signal(SIGPIPE, SIG_IGN);
-# endif
+# endif /* HAVE_RELIABLE_SIGNALS */
 	(void)signal(SIGALRM, dummy);   
 	(void)signal(SIGHUP, s_rehash);
 	(void)signal(SIGTERM, s_die); 
 	(void)signal(SIGINT, s_restart);
-#endif
+# if defined(USE_IAUTH)
+	(void)signal(SIGUSR1, s_slave);
+	(void)signal(SIGCHLD, SIG_IGN);
+# endif
+#endif /* POSIX_SIGNAL */
 
 #ifdef RESTARTING_SYSTEMCALLS
 	/*

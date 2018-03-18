@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: chkconf.c,v 1.5.2.1 1998/04/22 16:57:04 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: chkconf.c,v 1.9 1998/09/23 13:09:22 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -28,6 +28,7 @@ static  char rcsid[] = "@(#)$Id: chkconf.c,v 1.5.2.1 1998/04/22 16:57:04 kalt Ex
 #undef CHKCONF_C
 
 #define MyMalloc(x)     malloc(x)
+#define MyFree(x)       free(x)
 
 static	void	new_class();
 static	char	*getfield(), confchar ();
@@ -211,14 +212,10 @@ int	opt;
 		    *line == ' ' || *line == '\t')
 			continue;
 
-		if (line[1] != IRCDCONF_DELIMITER)
+		if (line[1] != ':')
 		    {
                         (void)fprintf(stderr, "ERROR: Bad config line (%s)\n",
 				line);
-			if (IRCDCONF_DELIMITER != ':')
-				(void)fprintf(stderr,
-				      "\tWrong delimiter? (should be %c)\n",
-					      IRCDCONF_DELIMITER);
                         continue;
                     }
 
@@ -471,6 +468,16 @@ int	opt;
 			else
 				flags |= aconf->status;
 		    }
+
+		if (aconf->status & CONF_VER)
+		    {
+			if (*aconf->host && !index(aconf->host, '/'))
+				(void)fprintf(stderr,
+					      "\tWARNING: No / in V line.");
+			else if (*aconf->passwd && !index(aconf->passwd, '/'))
+				(void)fprintf(stderr,
+					      "\tWARNING: No / in V line.");
+		    }
 print_confline:
 		if (debugflag > 8)
 			(void)printf("(%d) (%s) (%s) (%s) (%d) (%s)\n",
@@ -535,7 +542,7 @@ char	*irc_newline;
 		return(NULL);
 
 	field = line;
-	if ((end = (char *)index(line, IRCDCONF_DELIMITER)) == NULL)
+	if ((end = (char *)index(line,':')) == NULL)
 	    {
 		line = NULL;
 		if ((end = (char *)index(field,'\n')) == NULL)

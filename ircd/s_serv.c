@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.32.2.1 1998/04/05 02:40:31 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.47 1998/09/18 22:04:01 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -249,50 +249,86 @@ char	*parv[];
 int	check_version(cptr)
 aClient	*cptr;
 {
-	Debug((DEBUG_INFO,"check_version: %s, %s, %s", cptr->info,
-	       cptr->info+12, cptr->info+44));
+	char *id, *misc = NULL, *link = NULL;
 
-	/* hop = 1 really for local client, return it in m_server_estab() */
-	if (!strncmp(cptr->info, "0209", 4))
+	Debug((DEBUG_INFO,"check_version: %s", cptr->info));
+
+	if (cptr->info == DefInfo)
+	    {
+		cptr->hopcount = SV_OLD;
+		return 1; /* no version checked (e.g. older than 2.9) */
+	    }
+	if (id = index(cptr->info, ' '))
+	    {
+		*id++ = '\0';
+		if (link = index(id, ' '))
+			*link++ = '\0';
+		if (misc = index(id, '|'))
+			*misc++ = '\0';
+		else
+		    {
+			misc = id;
+			id = "";
+		    }
+	    }
+	else
+		id = "";
+
+	if (!strncmp(cptr->info, "021", 3) ||
+	    !strncmp(cptr->info, "020999", 6))
+		cptr->hopcount = SV_29|SV_NJOIN|SV_NMODE|SV_NCHAN; /* SV_2_10*/
+	else if (!strncmp(cptr->info, "0209", 4))
 	    {
 		cptr->hopcount = SV_29;	/* 2.9+ protocol */
 		if (!(cptr->info[4] == '0' &&
 		      (cptr->info[5] == '0' || cptr->info[5] == '1' ||
 		       cptr->info[5] == '2' || cptr->info[5] == '3' ||
-		       cptr->info[5] == '4')))
-			/* the NJOIN command appeared on 2.9.5 */
+		       cptr->info[5] == '4' ||
+		       (cptr->info[5] == '5' && cptr->info[6] == '0' &&
+			cptr->info[7] == '0'))))
+			/*
+			** the NJOIN command appeared on 2.9.5
+			** Unfortunately, m_njoin() has a fatal bug in 2.9.5
+			*/
 			cptr->hopcount |= SV_NJOIN;
 	    }
-	else if (!strncmp(cptr->info, "021", 3))
-		cptr->hopcount = SV_29|SV_NJOIN;
 	else
-		cptr->hopcount = SV_OLD;
+		cptr->hopcount = SV_OLD; /* uhuh */
 
-	if (*cptr->info) {	/* Check version number/mask from conf */
-		if (find_two_masks(cptr->name, cptr->info, CONF_VER)) {
-			sendto_flag(SCH_ERROR, "Bad version %s from %s",
-				    cptr->info, get_client_name(cptr, TRUE));
-			return exit_client(cptr, cptr, &me, "Bad version");
-		}
-	} else
-		return 1;	/* No version checked */
+	/* Check version number/mask from conf */
+	sprintf(buf, "%s/%s", id, cptr->info);
+	if (find_two_masks(cptr->name, buf, CONF_VER))
+	    {
+		sendto_flag(SCH_ERROR, "Bad version %s %s from %s", id,
+			    cptr->info, get_client_name(cptr, TRUE));
+		return exit_client(cptr, cptr, &me, "Bad version");
+	    }
 
-	strncpyzt(buf, cptr->info+12, 30);
-	if (*buf) {	/* Check version flags from conf */
-		if (find_conf_flags(cptr->name, buf, CONF_VER)) {
-			sendto_flag(SCH_ERROR, "Bad flags %s from %s",
-				    buf, get_client_name(cptr, TRUE));
+	if (misc)
+	    {
+		sprintf(buf, "%s/%s", id, misc);
+		/* Check version flags from conf */
+		if (find_conf_flags(cptr->name, buf, CONF_VER))
+		    {
+			sendto_flag(SCH_ERROR, "Bad flags %s (%s) from %s",
+				    misc, id, get_client_name(cptr, TRUE));
 			return exit_client(cptr, cptr, &me, "Bad flags");
-		}
-	} else
-		return 2;	/* No flags checked */
+		    }
+	    }
 
 	/* right now, I can't code anything good for this */
 	/* Stop whining, and do it! ;) */
-	if (strchr(cptr->info+44, 'Z'))	/* Compression requested */
+	if (link && strchr(link, 'Z'))	/* Compression requested */
                 cptr->flags |= FLAGS_ZIPRQ;
+	/*
+	 * If server was started with -p strict, be careful about the
+	 * other server mode.
+	 */
+	if (link && strncmp(cptr->info, "020", 3) &&
+	    (bootopt & BOOT_STRICTPROT) && !strchr(link, 'P'))
+		return exit_client(cptr, cptr, &me, "Unsafe mode");
 
-	return 3;
+	return 2;
 }
 
 /*
@@ -315,6 +351,11 @@ char	*parv[];
 	aConfItem *aconf;
 	int	hop = 0, token = 0;
 
+	if (sptr->user) /* in case NICK hasn't been received yet */
+            {
+                sendto_one(sptr, err_str(ERR_ALREADYREGISTRED, parv[0]));
+                return 1;
+            }
 	info[0] = info[REALLEN] = '\0';	/* strncpy() doesn't guarantee NULL */
 	inpath = get_client_name(cptr, FALSE);
 	if (parc < 2 || *parv[1] == '\0')
@@ -510,7 +551,9 @@ char	*parv[];
 		(void)make_server(acptr);
 		acptr->hopcount = hop;
 		strncpyzt(acptr->name, host, sizeof(acptr->name));
-		strncpyzt(acptr->info, info, sizeof(acptr->info));
+		if (acptr->info != DefInfo)
+			MyFree(acptr->info);
+		acptr->info = mystrdup(info);
 		acptr->serv->up = sptr->name;
 		acptr->serv->stok = token;
 		acptr->serv->snum = find_server_num(acptr->name);
@@ -568,7 +611,9 @@ char	*parv[];
 	 * may not be filled before check_version(). */
 	if ((hop = check_version(cptr)) < 1)
 		return hop;	/* from exit_client() */
-	strncpyzt(cptr->info, info[0] ? info:ME, sizeof(cptr->info));
+	if (cptr->info != DefInfo)
+		MyFree(cptr->info);
+	cptr->info = mystrdup(info[0] ? info : ME);
 
 	switch (check_server_init(cptr))
 	{
@@ -680,18 +725,19 @@ Reg	aClient	*cptr;
 	    {
 		if (bconf->passwd[0])
 #ifndef	ZIP_LINKS
-			sendto_one(cptr, "PASS %s %s %s", bconf->passwd,
-				   pass_version, serveropts);
-#else
-			sendto_one(cptr, "PASS %s %s %s %s", bconf->passwd,
+			sendto_one(cptr, "PASS %s %s IRC|%s %s", bconf->passwd,
 				   pass_version, serveropts,
-			   (bconf->status == CONF_ZCONNECT_SERVER) ? "Z" : "");
+				   (bootopt & BOOT_STRICTPROT) ? "P" : "");
+#else
+			sendto_one(cptr, "PASS %s %s IRC|%s %s%s",
+				   bconf->passwd, pass_version, serveropts,
+			   (bconf->status == CONF_ZCONNECT_SERVER) ? "Z" : "",
+				   (bootopt & BOOT_STRICTPROT) ? "P" : "");
 #endif
 		/*
 		** Pass my info to the new server
 		*/
-		sendto_one(cptr, "SERVER %s 1 :%s", mlname,
-			   (me.info[0]) ? (me.info) : "IRCers United");
+		sendto_one(cptr, "SERVER %s 1 :%s", mlname, me.info);
 
 		/*
 		** If we get a connection which has been authorized to be
@@ -747,7 +793,7 @@ Reg	aClient	*cptr;
 			return exit_client(cptr, cptr, &me,
 					   "zip_init() failed");
 		    }
-		cptr->flags |= FLAGS_ZIP;
+		cptr->flags |= FLAGS_ZIP|FLAGS_ZIPSTART;
 	    }
 #endif
 
@@ -884,9 +930,7 @@ Reg	aClient	*cptr;
 				   acptr->user->username,
 				   acptr->user->host, stok,
 				   (*buf) ? buf : "+", acptr->info);
-#ifdef	USE_NJOIN
 			if ((cptr->serv->version & SV_NJOIN) == 0)
-#endif
 				send_user_joins(cptr, acptr);
 		    }
 		else if (IsService(acptr) &&
@@ -913,10 +957,8 @@ Reg	aClient	*cptr;
 		for (chptr = channel; chptr; chptr = chptr->nextch)
 			if (chptr->users)
 			    {
-#ifdef	USE_NJOIN
 				if (cptr->serv->version & SV_NJOIN)
 					send_channel_members(cptr, chptr);
-#endif
 				send_channel_modes(cptr, chptr);
 			    }
 	    }
@@ -1280,8 +1322,8 @@ char	*to;
 			else
 				(void)strcpy(buf, tmp->name);
 			sendto_one(sptr, rpl_str(RPL_STATSPING, to),
-				   buf, cp->lseq, cp->lrecvd,
-				   cp->ping / (cp->recvd ? cp->recvd : 1),
+				   buf, cp->lseq, cp->lrecv,
+				   cp->ping / (cp->recv ? cp->recv : 1),
 				   tmp->pref);
 		    }
 	return;
@@ -1383,6 +1425,11 @@ char	*parv[];
 				   timeofday - acptr->firsttime);
 		    }
 		break;
+#if defined(USE_IAUTH)
+	case 'a' : case 'A' : /* iauth configuration */
+		report_iauth_conf(sptr, parv[0]);
+		break;
+#endif
 	case 'B' : case 'b' : /* B conf lines */
 		report_configured_links(cptr, parv[0], CONF_BOUNCE);
 		break;
@@ -1424,9 +1471,7 @@ char	*parv[];
 		report_configured_links(cptr,parv[0],CONF_QUARANTINED_SERVER);
 		break;
 	case 'R' : case 'r' : /* usage */
-#ifdef DEBUGMODE
 		send_usage(cptr, parv[0]);
-#endif
 		break;
 	case 'S' : case 's' : /* S lines */
 		report_configured_links(cptr, parv[0], CONF_SERVICE);
@@ -1854,7 +1899,7 @@ char	*parv[];
 	if (!IsServer(sptr))
 	    {
 		pv[0] = parv[0];
-		pv[1] = "#wallops";
+		pv[1] = "+wallops";
 		pv[2] = message;
 		pv[3] = NULL;
 		return m_private(cptr, sptr, 3, pv);
@@ -2371,6 +2416,8 @@ check_link(cptr)
 aClient	*cptr;
 {
     if (!IsServer(cptr))
+	    return 0;
+    if (!(bootopt & BOOT_PROT))
 	    return 0;
 
     ircstp->is_ckl++;

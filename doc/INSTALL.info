@@ -1,5 +1,5 @@
 This is Info file INSTALL.info, produced by Makeinfo-1.55 from the
-input file /tmp/sgml2info19909tmp2.
+input file /tmp/sgml2info3232tmp2.
 
    \input texinfo
 
@@ -10,9 +10,9 @@ Installing IRC - The Internet Relay Chat Program
 ************************************************
 
      SGML version by Christophe Kalt
-     $Id: INSTALL.info,v 1.23.2.1 1998/06/12 23:53:54 kalt Exp $
+     $Id: INSTALL.info,v 1.30 1998/09/24 17:45:16 kalt Exp $
 
-   This document describes how to install, and configure IRC 2.9.5.
+   This document describes how to install, and configure IRC 2.10.
 
 * Menu:
 
@@ -33,7 +33,6 @@ Installing IRC-
 
 * The configure script::
 * Notes for Cygwin32 users::
-* Notes concerning IPv6 support::
 
 
 File: INSTALL.info,  Node: The configure script,  Next: Notes for Cygwin32 users,  Up: Installing IRC-
@@ -53,8 +52,17 @@ default behaviour:
      changes the default directory into which ircd will install using
      "make install".  This defaults to /usr/local
 
+`--sbindir=DIR'
+     changes the default directory where the system admin executable
+     files will go. It is important to set this properly. (default is
+     prefix/sbin)
+
 `--libdir=DIR'
      changes the default directory where most irc files will go.
+     (default is prefix/lib/ircd)
+
+`--logdir=DIR'
+     changes the default directory where the irc log files will go.
      (default is prefix/lib/ircd)
 
 `--resconf=FILE'
@@ -83,11 +91,8 @@ default behaviour:
      tells "configure" not to look for the zlib.  Defining this will
      keep you from using server link compression.
 
-`--enable-ip6'
-     Enable IPv6 support (See notes below)
-
 
-File: INSTALL.info,  Node: Notes for Cygwin32 users,  Next: Notes concerning IPv6 support,  Prev: The configure script,  Up: Installing IRC-
+File: INSTALL.info,  Node: Notes for Cygwin32 users,  Prev: The configure script,  Up: Installing IRC-
 
 Notes for Cygwin32 users
 ========================
@@ -108,27 +113,6 @@ initialize the resolver.  This file can be anywhere (see configure
 options), and is typically in `/etc' on UNIX systems.
 
 
-File: INSTALL.info,  Node: Notes concerning IPv6 support,  Prev: Notes for Cygwin32 users,  Up: Installing IRC-
-
-Notes concerning IPv6 support
-=============================
-
-   This version of the IRC software has support for IPv6 systems.
-However this is considered to be beta quality.  For this reason, it is
-recommended that if you wish to run the server on an IPv6 system, you
-have prior experience with this software.
-
-   The only part of the software that doesn't use IPv6 is the server
-internal resolver.  It relies on the name servers defined in
-"/etc/resolv.conf" to be IPv4 addresses.
-
-   This version was tested on the following IPv6 systems: Digital Unix,
-Linux, NetBSD+INRIA.
-
-   Because IPv6 numeric addresses contains ":" characters, `the
-separator for the server configuration file was changed to "%"'.
-
-
 File: INSTALL.info,  Node: The config-h file,  Next: Editing the Makefile and compiling,  Prev: Installing IRC-,  Up: Top
 
 The config-h file
@@ -142,7 +126,7 @@ This is done by editing the "config.h" file and changing the various
 
 * Define what type of UNIX your machine uses-::
 * DEBUGMODE::
-* SPATH CPATH MPATH LPATH PPATH TPATH::
+* CPATH MPATH LPATH PPATH TPATH QPATH OPATH::
 * CACHED_MOTD::
 * CHROOTDIR::
 * ENABLE_SUMMON ENABLE_USERS::
@@ -164,7 +148,7 @@ the #undef to #define (if needed).Some flavours of Unix require no
 #define and in such cases all others should be #undef'd.
 
 
-File: INSTALL.info,  Node: DEBUGMODE,  Next: SPATH CPATH MPATH LPATH PPATH TPATH,  Prev: Define what type of UNIX your machine uses-,  Up: The config-h file
+File: INSTALL.info,  Node: DEBUGMODE,  Next: CPATH MPATH LPATH PPATH TPATH QPATH OPATH,  Prev: Define what type of UNIX your machine uses-,  Up: The config-h file
 
 DEBUGMODE
 =========
@@ -180,21 +164,17 @@ of self diagnostics whilst running.
 production server.'
 
 
-File: INSTALL.info,  Node: SPATH CPATH MPATH LPATH PPATH TPATH,  Next: CACHED_MOTD,  Prev: DEBUGMODE,  Up: The config-h file
+File: INSTALL.info,  Node: CPATH MPATH LPATH PPATH TPATH QPATH OPATH,  Next: CACHED_MOTD,  Prev: DEBUGMODE,  Up: The config-h file
 
-SPATH CPATH MPATH LPATH PPATH TPATH
-===================================
-
-   Define SPATH to be the directory path to ircd.  This is usually
-/usr/local/sbin/ircd, unless you don't have installation permission
-there.
+CPATH MPATH LPATH PPATH TPATH QPATH OPATH
+=========================================
 
    Define CPATH to be the directory path to the "ircd.conf" file. This
 path is usually /usr/local/lib/ircd/ircd.conf. The format of this file
 will be discussed later.
 
    The LPATH #define should be set to "/dev/null" unless you plan to
-debug the program.  Note that the logfile grows very quickly.
+debug the ircd program.  Note that the logfile grows very quickly.
 
    Define MPATH to be the path to the "motd" (message of the day) file
 for the server.  Keep in mind this is automatically displayed whenever
@@ -205,12 +185,15 @@ either doesn't exist (but is creatable) or a previously used PPATH
 file.  It is used for storing the server's PID so a ps(1) isn't
 necessary.
 
-   Define TPATH to be the directory path to the "ircd.tune" file. This
-path is usually /usr/local/lib/ircd/ircd.tune.  This file is used by
-the server to optimize memory use.
+   Define QPATH to be the directory path to the "iauth.conf" file. This
+path is usually /usr/local/lib/ircd/iauth.conf.  The format of this
+file is described by a manual page.
+
+   The OPATH #define should be set to "/dev/null" unless you plan to
+debug the iauth program.  Note that the logfile grows very quickly.
 
 
-File: INSTALL.info,  Node: CACHED_MOTD,  Next: CHROOTDIR,  Prev: SPATH CPATH MPATH LPATH PPATH TPATH,  Up: The config-h file
+File: INSTALL.info,  Node: CACHED_MOTD,  Next: CHROOTDIR,  Prev: CPATH MPATH LPATH PPATH TPATH QPATH OPATH,  Up: The config-h file
 
 CACHED_MOTD
 ===========
@@ -335,8 +318,8 @@ Editing the Makefile and compiling
 the correct Makefile.  However you need to edit it to specify specific
 information, such as "prefix", "irc_mode", "ircd_mode" and "ircd_dir".
 
-   Now to build the package, type "make".  If everything goes will, you
-can then install it by typing "make install".
+   Now to build the package, type "make all".  If everything goes will,
+you can then install it by typing "make install".
 
    If you have trouble compiling ircd, copy Makefile.in to Makefile and
 edit Makefile as appropriate.
@@ -1051,7 +1034,7 @@ Excluded accounts
      This disallows all users from hosts with enddomain "oulu.fi"
      access to your server between 8 and 12am, 2 and 7pm. Users get
      kicked off if they're already signed on when the line becomes
-     active (they'll get a warning 5 minutes ago).
+     active (they'll get a warning 5 minutes before).
 
      K:192.11.35.*::*:0:
 
@@ -1417,40 +1400,53 @@ Version limitations
      V:<Version Mask>:<Flags>:<Server Mask>::
 
 `Version Mask'
-     The matching version strings will be rejected.
+     The matching version number strings will be rejected.
 
 `Flags'
-     This field should contained flags as defined in ircd/s_debug.c
-
-     These flags show up in RPL_VERSION.
-
-     If any of the flags present in this field are found in the
-     RPL_VERSION of a server, this server will be denied connection.
-     This must be used with care.
+     The matching version flags strings will be rejected.
 
 `Server Mask'
      This field is used to match server names.  The V line will be used
      for servers matching the mask given in this field.
 
+`Server Type'
+     Both the `Version Mask' and the `Flags' should be prefixed with
+     the server type identification.  This implementation uses the id
+     "`IRC"' (starting with version 2.10).
+
 `Examples'
-     V:020901*::*::
+     V:IRC/021001*::*::
 
-     Disallows any server which version is 2.9.1* to connect.
+     Disallows any "IRC" server which version is 2.10.1* to connect.
 
-     V:020901*:D:*::
+     V:IRC/021001*:IRC/*D*:*::
 
-     Disallows any server which version is 2.9.1* or which has been
-     compiled with DEBUGMODE defined to connect.
+     Disallows any "IRC" server which version is 2.10.1* or which has
+     been compiled with DEBUGMODE defined to connect.
+
+     V:*/0209*::*::
+
+     Disallows any server using the 2.9 protocol to connect.
 
 `Note'
      It is possible to have and use multiple V-lines for the one server
      mask.
 
-     V:020901:*:*::
+     V:IRC/021001*:*:*::
 
-     V:020902:*:*::
+     V:IRC/021002*:*:*::
 
      is allowed.
+
+`Protocol Version'
+     Only the 4 first digit of the `Version Number' are standard: they
+     define the protocol version.  The remaining of the string is
+     implementation dependant; matches on this part should be used with
+     particular identification.
+
+`Flags'
+     are not standard.  Therefore, this field `should always' contain a
+     specific identification.
 
 
 File: INSTALL.info,  Node: Excluded machines,  Next: Service connections,  Prev: Version limitations,  Up: The ircd-conf file
@@ -1688,46 +1684,45 @@ forwarded to the appropriate mailing list.
 
 
 Tag Table:
-Node: Top123
-Node: Installing IRC-630
-Node: The configure script855
-Node: Notes for Cygwin32 users2622
-Node: Notes concerning IPv6 support3552
-Node: The config-h file4374
-Node: Define what type of UNIX your machine uses-5040
-Node: DEBUGMODE5440
-Node: SPATH CPATH MPATH LPATH PPATH TPATH6098
-Node: CACHED_MOTD7307
-Node: CHROOTDIR7777
-Node: ENABLE_SUMMON ENABLE_USERS8101
-Node: SHOW_INVISIBLE_LUSERS NO_DEFAULT_INVISIBLE8637
-Node: OPER_KILL OPER_REHASH OPER_RESTART LOCAL_KILL_ONLY9320
-Node: ZIP_LINKS ZIP_LEVEL9952
-Node: SLOW_ACCEPT10963
-Node: CLONE_CHECK11581
-Node: Other #define's11921
-Node: Editing the Makefile and compiling12246
-Node: The ircd-conf file12882
-Node: Machine information14914
-Node: Administrative info17010
-Node: Port connections19045
-Node: Connection Classes21255
-Node: Client connections26706
-Node: Operator priviliges32219
-Node: Restrict connections34339
-Node: Excluded accounts35654
-Node: Server connections39617
-Node: Deny auto-connections48056
-Node: Hub connections49429
-Node: Leaf connections50645
-Node: Version limitations52728
-Node: Excluded machines53967
-Node: Service connections55274
-Node: Bounce server56867
-Node: Default local server (for local clients) `*OBSOLETED*'58569
-Node: Related resources59452
-Node: Reporting a bug60394
-Node: How to report a bug60654
-Node: Where to send a bug report61667
+Node: Top122
+Node: Installing IRC-628
+Node: The configure script819
+Node: Notes for Cygwin32 users2819
+Node: The config-h file3711
+Node: Define what type of UNIX your machine uses-4383
+Node: DEBUGMODE4783
+Node: CPATH MPATH LPATH PPATH TPATH QPATH OPATH5447
+Node: CACHED_MOTD6675
+Node: CHROOTDIR7151
+Node: ENABLE_SUMMON ENABLE_USERS7475
+Node: SHOW_INVISIBLE_LUSERS NO_DEFAULT_INVISIBLE8011
+Node: OPER_KILL OPER_REHASH OPER_RESTART LOCAL_KILL_ONLY8694
+Node: ZIP_LINKS ZIP_LEVEL9326
+Node: SLOW_ACCEPT10337
+Node: CLONE_CHECK10955
+Node: Other #define's11295
+Node: Editing the Makefile and compiling11620
+Node: The ircd-conf file12260
+Node: Machine information14292
+Node: Administrative info16388
+Node: Port connections18423
+Node: Connection Classes20633
+Node: Client connections26084
+Node: Operator priviliges31597
+Node: Restrict connections33717
+Node: Excluded accounts35032
+Node: Server connections38998
+Node: Deny auto-connections47437
+Node: Hub connections48810
+Node: Leaf connections50026
+Node: Version limitations52109
+Node: Excluded machines53825
+Node: Service connections55132
+Node: Bounce server56725
+Node: Default local server (for local clients) `*OBSOLETED*'58427
+Node: Related resources59310
+Node: Reporting a bug60252
+Node: How to report a bug60512
+Node: Where to send a bug report61525
 
 End Tag Table

@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: parse.c,v 1.12.2.1 1998/04/22 16:57:02 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: parse.c,v 1.20 1998/09/13 20:09:05 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -92,25 +92,25 @@ struct Message msgtab[] = {
 #ifdef	USE_SERVICES
   { MSG_SERVSET, m_servset,  MAXPARA, MSG_LAG|MSG_SVC|MSG_NOU, 0, 0, 0L},
 #endif
-  { MSG_SQUERY,  m_squery,   MAXPARA, MSG_LAG|MSG_REG, 0, 0, 0L},
+  { MSG_SQUERY,  m_squery,   MAXPARA, MSG_LAG|MSG_REGU, 0, 0, 0L},
   { MSG_SERVLIST,m_servlist, MAXPARA, MSG_LAG|MSG_REG, 0, 0, 0L},
   { MSG_HASH,    m_hash,     MAXPARA, MSG_LAG|MSG_REG, 0, 0, 0L},
   { MSG_DNS,     m_dns,      MAXPARA, MSG_LAG|MSG_REG, 0, 0, 0L},
-#if defined(OPER_REHASH) || defined(LOCOP_REHASH)
+#ifdef	OPER_REHASH
   { MSG_REHASH,  m_rehash,   MAXPARA, MSG_REGU|MSG_OP
 # ifdef	LOCOP_REHASH
 					 |MSG_LOP
 # endif
 					, 0, 0, 0L},
 #endif
-#if defined(OPER_RESTART) || defined(LOCOP_RESTART)
+#ifdef	OPER_RESTART
   { MSG_RESTART,  m_restart,   MAXPARA, MSG_REGU|MSG_OP
 # ifdef	LOCOP_RESTART
 					 |MSG_LOP
 # endif
 					, 0, 0, 0L},
 #endif
-#if defined(OPER_DIE) || defined(LOCOP_DIE)
+#ifdef	OPER_DIE
   { MSG_DIE,  m_die,   MAXPARA, MSG_REGU|MSG_OP
 # ifdef	LOCOP_DIE
 					 |MSG_LOP
@@ -553,7 +553,10 @@ char	*buffer, *bufend;
 		if ((mptr->flags & MSG_LAG) &&
 		    !(IsServer(cptr) || IsService(cptr)))
 		    {	/* Flood control partly migrated into penalty */
-			cptr->since += (1 + i / 100);
+			if (bootopt & BOOT_PROT)
+				cptr->since += (1 + i / 100);
+			else
+				cptr->since = timeofday;
 			/* Allow only 1 msg per 2 seconds
 			 * (on average) to prevent dumping.
 			 * to keep the response rate up,
@@ -605,13 +608,13 @@ char	*buffer, *bufend;
 				break;
 			    }
 			para[++i] = s;
-			if (i >= paramcount)
+			if (i >= paramcount-1)
 				break;
 			for (; *s != ' ' && *s; s++)
 				;
 		    }
 	    }
-	para[++i] = NULL;
+	para[++i] = NULL; /* at worst, ++i is paramcount (MAXPARA) */
 	if (mptr == NULL)
 		return (do_numeric(numeric, cptr, from, i, para));
 	mptr->count++;
@@ -638,12 +641,14 @@ char	*buffer, *bufend;
 		sendto_one(from, err_str(ERR_ALREADYREGISTRED, para[0]));
 		return-1;
 	    }
-	if (MyConnect(from) && !IsPrivileged(from) &&
-	    (mptr->flags & (MSG_LOP|MSG_OP)))
-	    {
-		sendto_one(from, err_str(ERR_NOPRIVILEGES, para[0]));
-		return -1;
-	    }
+	if (MyConnect(from) && !IsServer(from) &&
+	    (mptr->flags & (MSG_LOP|MSG_OP)) &&
+	    !((mptr->flags & MSG_OP) && (IsOper(from))) &&
+	    !((mptr->flags & MSG_LOP) && (IsLocOp(from))))
+		    {
+			sendto_one(from, err_str(ERR_NOPRIVILEGES, para[0]));
+			return -1;
+		    }
 #endif
 	/*
 	** ALL m_functions return now UNIFORMLY:
@@ -660,7 +665,7 @@ char	*buffer, *bufend;
         ** Add penalty score for sucessfully parsed command if issued by
 	** a LOCAL user client.
 	*/
-	if ((ret > 0) && IsRegisteredUser(cptr))
+	if ((ret > 0) && IsRegisteredUser(cptr) && (bootopt & BOOT_PROT))
 	    {
 		cptr->since += ret;
 /* only to lurk
@@ -688,7 +693,7 @@ char	*irc_newline;
 		return(NULL);
 
 	field = line;
-	if ((end = (char *)index(line, IRCDCONF_DELIMITER)) == NULL)
+	if ((end = (char *)index(line,':')) == NULL)
 	    {
 		line = NULL;
 		if ((end = (char *)index(field,'\n')) == NULL)

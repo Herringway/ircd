@@ -4,9 +4,9 @@
 
 <title>Installing IRC - The Internet Relay Chat Program
 <author>SGML version by Christophe Kalt
-<date>$Id: INSTALL.sgml,v 1.23.2.1 1998/06/12 23:53:54 kalt Exp $
+<date>$Id: INSTALL.sgml,v 1.30 1998/09/24 17:45:17 kalt Exp $
 <abstract>
-This document describes how to install, and configure IRC 2.9.5.
+This document describes how to install, and configure IRC 2.10.
 </abstract>
 
 <sect>Installing IRC.
@@ -24,8 +24,13 @@ change the default behaviour:
 <tag/--prefix=DIR/ changes the default directory into which
 ircd will install using ``make install''.  This defaults
 to /usr/local
+<tag/--sbindir=DIR/ changes the default directory where the
+system admin executable files will go. It is important to
+set this properly. (default is prefix/sbin)
 <tag/--libdir=DIR/ changes the default directory where most
 irc files will go. (default is prefix/lib/ircd)
+<tag/--logdir=DIR/ changes the default directory where the
+irc log files will go. (default is prefix/lib/ircd)
 <tag/--resconf=FILE/ defines the file to be used by ircd to
 initialize its resolver.  (default is /etc/resolv.conf)
 <tag/--zlib-include=DIR/ specifies in which directory the
@@ -42,7 +47,6 @@ it.  This does NOT mean you can use server link compression,
 for this you also need to define ZIP_LINKS (see section below).
 <tag/--without-zlib/ tells ``configure'' not to look for the zlib.
 Defining this will keep you from using server link compression.
-<tag/--enable-ip6/ Enable IPv6 support (See notes below)
 </descrip>
 
 <sect1>Notes for Cygwin32 users
@@ -66,25 +70,6 @@ Also, the IRC server needs a <bf>resolv.conf</bf> file in
 order to initialize the resolver.  This file can be anywhere
 (see configure options), and is typically in <bf>/etc</bf>
 on UNIX systems.
-
-<sect1>Notes concerning IPv6 support
-<p>
-This version of the IRC software has support for IPv6
-systems.  However this is considered to be beta quality.
-For this reason, it is recommended that if you wish to run
-the server on an IPv6 system, you have prior experience with
-this software.
-<p>
-The only part of the software that doesn't use IPv6 is the
-server internal resolver.  It relies on the name servers
-defined in ``/etc/resolv.conf'' to be IPv4 addresses.
-<p>
-This version was tested on the following IPv6 systems:
-Digital Unix, Linux, NetBSD+INRIA.
-<p>
-Because IPv6 numeric addresses contain ``:'' characters,
-<bf>the separator for the server configuration file was
-changed to ``%''</bf>.
 
 <sect>The config.h file
 <p>
@@ -112,18 +97,14 @@ diagnostics whilst running.
 <bf>This should only be defined for test purposes, and never
 used on a production server.</bf>
 
-<sect1>SPATH, CPATH, MPATH, LPATH, PPATH, TPATH
-<p>
-Define SPATH to be the directory path to ircd.  This is
-usually /usr/local/sbin/ircd, unless you don't have
-installation permission there.
+<sect1>CPATH, MPATH, LPATH, PPATH, TPATH, QPATH, OPATH
 <p>
 Define CPATH to be the directory path to the ``ircd.conf''
 file. This path is usually /usr/local/lib/ircd/ircd.conf. The
 format of this file will be discussed later.
 <p>
 The LPATH &num;define should be set to ``/dev/null'' unless
-you plan to debug the program.  Note that the logfile grows
+you plan to debug the ircd program.  Note that the logfile grows
 very quickly.
 <p>
 Define MPATH to be the path to the ``motd'' (message of the
@@ -136,9 +117,13 @@ file which either doesn't exist (but is creatable) or a
 previously used PPATH file.  It is used for storing the
 server's PID so a ps(1) isn't necessary.
 <p>
-Define TPATH to be the directory path to the ``ircd.tune''
-file. This path is usually /usr/local/lib/ircd/ircd.tune.  This
-file is used by the server to optimize memory use.
+Define QPATH to be the directory path to the ``iauth.conf''
+file. This path is usually /usr/local/lib/ircd/iauth.conf.
+The format of this file is described by a manual page.
+<p>
+The OPATH &num;define should be set to ``/dev/null'' unless
+you plan to debug the iauth program.  Note that the logfile grows
+very quickly.
 
 <sect1>CACHED_MOTD
 <p>
@@ -197,7 +182,7 @@ used.  Values above 5 will noticeably increase the CPU used
 by the server.
 <p>
 The zlib package may be found at <url
-url="http://quest.jpl.nasa.gov/zlib/">. The data format used
+url="http://www.cdrom.com/pub/infozip/zlib/">. The data format used
 by the zlib library is described by RFCs (Request for
 Comments) 1950 to 1952 in the files <url
 url="ftp://ds.internic.net/rfc/rfc1950.txt"> (zlib format),
@@ -239,7 +224,7 @@ generate the correct Makefile.  However you need to edit it
 to specify specific information, such as ``prefix'',
 ``irc_mode'', ``ircd_mode'' and ``ircd_dir''.
 <p>
-Now to build the package, type ``make''.  If everything
+Now to build the package, type ``make all''.  If everything
 goes will, you can then install it by typing ``make install''.
 <p>
 If you have trouble compiling ircd, copy Makefile.in to
@@ -821,7 +806,7 @@ This disallows all users from hosts with enddomain
 ``oulu.fi'' access to your server between 8 and 12am, 2 and
 7pm. Users get kicked off if they're already signed on when
 the line becomes active (they'll get a warning 5 minutes
-ago).
+before).
 <p>
 K:192.11.35.*::*:0:
 <p>
@@ -1157,34 +1142,42 @@ server.
 connecting to you based on their version and on compile time
 options.
 <tag/Format/<verb>V:&lt;Version Mask&gt;:&lt;Flags&gt;:&lt;Server Mask&gt;::</verb>
-<tag/Version Mask/ The matching version strings will be rejected.
-<tag/Flags/ This field should contained flags as defined in
-ircd/s_debug.c
-<p>
-These flags show up in RPL_VERSION.
-<p>
-If any of the flags present in this field are found in the
-RPL_VERSION of a server, this server will be denied
-connection.  This must be used with care.
+<tag/Version Mask/ The matching version number strings will be rejected.
+<tag/Flags/ The matching version flags strings will be rejected.
 <tag/Server Mask/ This field is used to match server names.
 The V line will be used for servers matching the mask given
 in this field.
-<tag/Examples/V:020901*::*::
+<tag/Server Type/ Both the <bf>Version Mask</bf> and the
+<bf>Flags</bf> should be prefixed with the server type
+identification.  This implementation uses the id
+``<bf>IRC</bf>'' (starting with version 2.10).
+<tag/Examples/V:IRC/021001*::*::
 <p>
-Disallows any server which version is 2.9.1* to connect.
+Disallows any ``IRC'' server which version is 2.10.1* to connect.
 <p>
-V:020901*:D:*::
+V:IRC/021001*:IRC/*D*:*::
 <p>
-Disallows any server which version is 2.9.1* or which has
-been compiled with DEBUGMODE defined to connect.
+Disallows any ``IRC'' server which version is 2.10.1* or
+which has been compiled with DEBUGMODE defined to connect.
+<p>
+V:*/0209*::*::
+<p>
+Disallows any server using the 2.9 protocol to connect.
 <tag/Note/  It is possible to have and use multiple V-lines
 for the one server mask.
 <p>
-V:020901:*:*::
+V:IRC/021001*:*:*::
 <p>
-V:020902:*:*::
+V:IRC/021002*:*:*::
 <p>
 is allowed.
+<tag/Protocol Version/ Only the 4 first digit of the
+<bf>Version Number</bf> are standard: they define the
+protocol version.  The remaining of the string is
+implementation dependant; matches on this part should be
+used with particular identification.
+<tag/Flags/ are not standard.  Therefore, this field
+<bf>should always</bf> contain a specific identification.
 </descrip>
 
 <sect1>Excluded machines

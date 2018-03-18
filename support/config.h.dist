@@ -44,18 +44,51 @@
 				     this) */
 
 /*
+ *  ircdwatch configuration options.
+ *
+ *  make sure SPATH has a fully qualified path or that the IRC server binary
+ *  is within the directory specified in server_bin_dir (see Makefile) if
+ *  you plan to let ircdwatch find the server binary. 
+ *
+ */
+
+/* file within DPATH that holds the pid of ircdwatch */
+#define IRCDWATCH_PID_FILENAME      "ircdwatch.pid"
+
+/* how often (in seconds) should we check that ircd runs? */
+#define IRCDWATCH_POLLING_INTERVAL  30
+
+/* 
+ * should we check for config file changes and HUP the server
+ * if a change is detected?
+*/
+#undef IRCDWATCH_HUP_ON_CONFIG_CHANGE
+
+/* 
+ * although you may not want to log ircd-messages to syslog you
+ * may want to log when ircdwatch reloads the config or when
+ * ircd croaks and ircdwatch has to restart it
+ */
+#define IRCDWATCH_USE_SYSLOG
+#ifdef IRCDWATCH_USE_SYSLOG
+# define IRCDWATCH_SYSLOG_IDENT     "ircdwatch"
+# define IRCDWATCH_SYSLOG_OPTIONS   (LOG_PID)
+# define IRCDWATCH_SYSLOG_FACILITY  LOG_DAEMON
+#endif
+
+
+/*
  * Pathnames and defaults of irc system's support files. Please note that
  * these are only the recommened names and paths. Change as needed.
  * You must define these to something, even if you don't really want them.
  */
-/* This is either full path or file within "server_bin_dir" (see Makefile) */
-#define	SPATH	"ircd"		/* daemon path */
-/* These are either full paths or files within "ircd_dir" (see Makefile) */
 #define	CPATH	"ircd.conf"	/* configuration file */
 #define	MPATH	"ircd.motd"	/* motd file */
 #define	LPATH	"ircd.log"	/* debugging log */
 #define	PPATH	"ircd.pid"	/* PID file */
 #define	TPATH	"ircd.tune"	/* tuning file */
+#define	QPATH	"iauth.conf"	/* authentication slave configuration file */
+#define	OPATH	"iauth.log"	/* authentication slave debugging log */
 
 /*
  * If you don't want the server to keep reading the MOTD file from the disk,
@@ -67,15 +100,18 @@
 /*
  * Define these filenames to maintain a list of persons who log
  * into this server. Logging will stop when the file does not exist.
- * Logging will be disable also if you do not define this.
+ * Logging will be disabled also if you do not define this.
  *	FNAME_USERLOG just logs user connections,
  *	FNAME_OPERLOG logs every successful use of /oper.
  *	FNAME_CONNLOG logs every user rejected or uncomplete connection
+ *	FNAME_AUTHLOG logs authentication information retrieved by iauth
+ *		      (file must exist on startup, see man page)
  * These are either full paths or files within "ircd_dir" (see Makefile).
  */
-#define FNAME_USERLOG "users" /* */
-#define FNAME_OPERLOG "opers" /* */
-#define FNAME_CONNLOG "rejects" /* */
+#define FNAME_USERLOG "@logdir@users" /* */
+#define FNAME_OPERLOG "@logdir@opers" /* */
+#define FNAME_CONNLOG "@logdir@rejects" /* */
+#define FNAME_AUTHLOG "@logdir@auth" /* */
 
 /* CHROOTDIR
  *
@@ -124,15 +160,18 @@
  * Left undefined they increase the security of your server from wayward
  * operators and accidents.  Defining OPER_REMOTE removes the restriction
  * that O-lines only become fully effective for people on the 'same network'
- * as the server.  Undefined, it increases the secrity of the server by
+ * as the server.  Undefined, it increases the security of the server by
  * placing restrictions on where people can use operator powers from.
  * The 'LOCOP_' #defines are for making the respective commands available
- * to 'local' operators.
+ * to 'local' operators. Note that the 'OPER_' #defines affect both global
+ * (big O) and local (little o) operators.  Defining 'LOCOP_x' has no effect
+ * if 'OPER_x' is undefined so you can't give local operators more rights
+ * than global ones.
  */
 #undef	OPER_KILL
 #define	OPER_REHASH
 #undef	OPER_RESTART
-#undef	OPER_DIE
+#define	OPER_DIE
 #undef	OPER_REMOTE
 #undef	LOCOP_REHASH
 #undef	LOCOP_RESTART
@@ -184,15 +223,21 @@
  * A pure non-routing leaf server can undefine HUB for best performance.
  * If your server is running as a a HUB Server then define this.
  * A HUB Server has many servers connect to it at the same as opposed
- * to a leaf which just has 1 server (typically the uplink). Define this
- * correctly for performance reasons. If defined, value of 0 creates
- * biggest load on cpu, and bigger values decrease the cpu load on price
- * of user-friendlyness.
+ * to a leaf which just has 1 server (typically the uplink).
+ */
+/* #define	HUB */
+
+/* 
+ * Defining PREFER_SERVER will give priority to server traffic over
+ * client traffic.
+ * Define this correctly for performance reasons. If defined, value of 0
+ * creates biggest load on cpu, and bigger values decrease the cpu load
+ * on price of user-friendlyness.
  *
  * The higher value (in seconds), the less often users will be polled (giving
  * a greater precedence to traffic to and from servers).
  */
-/* #define	HUB	1 */
+#define PREFER_SERVER 1
 
 #ifdef HUB
 /*
@@ -277,7 +322,7 @@
 
 /*
  * define this if you want to use crypted passwords for operators in your
- * ircd.conf file. See ircd/crypt/README for more details on this.
+ * ircd.conf file. See contrib/mkpasswd/README for more details on this.
  */
 #undef	CRYPT_OPER_PASSWORD
 
@@ -391,12 +436,6 @@
  */
 #undef	CLONE_CHECK
 
-/* For broken mirc (win/pc) client. Enables old features:
- * 1) Send start-of-list numeric before LIST reply
- * 2) Revert combined "n JOIN #^Go" -> "n JOIN #" "MODE # o n"
- */
-#define MIRC_KLUDGE
-
 /*   STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP  */
 /*   STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP  */
 /*   STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP  */
@@ -478,8 +517,16 @@
  * Max time for the channel history and nick delay to be effective.
  * It should be the same value on all servers of a same net, and
  * be greater than the split durations usually seen.
+ * DELAYCHASETIMELIMIT is the default.
  */
-#define DELAYCHASETIMELIMIT 900   /* Recommended value: 900 */
+#define DELAYCHASETIMELIMIT	1800	/* Recommended value: 1800 */
+
+/*
+ * Max time for !channel history, this *MUST* be fairly long (usually
+ * much longer than the value above) to ensure shortname unicity.
+ * It makes very little sense to use a short time limit here.
+ */
+#define LDELAYCHASETIMELIMIT	5400	/* Recommended value: 5400 */
 
 /*
  * Max number of channels a user is allowed to join.
@@ -494,6 +541,12 @@
  * -avalon
  */
 #define	SENDQ_ALWAYS
+
+/*
+ * USE_IAUTH makes ircd use the iauth program for authentication.
+ * it can always be overriden by using the -s switch
+ */
+#define USE_IAUTH
 
 #ifdef ZIP_LINKS
 /*
@@ -523,7 +576,6 @@
 /* #undef	NO_PREFIX */
 
 /* ------------------------- END CONFIGURATION SECTION -------------------- */
-#define	MYNAME SPATH
 #define	CONFIGFILE CPATH
 #define	IRCD_PIDFILE PPATH
 

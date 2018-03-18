@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.15.2.3 1998/05/17 20:29:33 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.24 1998/08/05 02:39:04 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -76,35 +76,10 @@ time_t	clock;
 	if (minswest < 0)
 		minswest = -minswest;
 
-	(void)sprintf(buf, "%s %s %d 19%02d -- %02d:%02d %c%02d:%02d",
+	(void)sprintf(buf, "%s %s %d %d -- %02d:%02d %c%02d:%02d",
 		weekdays[lt->tm_wday], months[lt->tm_mon],lt->tm_mday,
-		lt->tm_year, lt->tm_hour, lt->tm_min,
+		lt->tm_year + 1900, lt->tm_hour, lt->tm_min,
 		plus, minswest/60, minswest%60);
-
-	return buf;
-}
-
-/**
- ** myctime()
- **   This is like standard ctime()-function, but it zaps away
- **   the newline from the end of that string. Also, it takes
- **   the time value as parameter, instead of pointer to it.
- **   Note that it is necessary to copy the string to alternate
- **   buffer (who knows how ctime() implements it, maybe it statically
- **   has newline there and never 'refreshes' it -- zapping that
- **   might break things in other places...)
- **
- **/
-
-char	*myctime(value)
-time_t	value;
-{
-	static	char	buf[28];
-	Reg	char	*p;
-
-	(void)strcpy(buf, ctime(&value));
-	if ((p = (char *)index(buf, '\n')) != NULL)
-		*p = '\0';
 
 	return buf;
 }
@@ -189,7 +164,6 @@ aClient	*sptr;
 **	to internal buffer (nbuf). *NEVER* use the returned pointer
 **	to modify what it points!!!
 */
-
 char	*get_client_name(sptr, showip)
 aClient *sptr;
 int	showip;
@@ -214,13 +188,7 @@ int	showip;
 					sptr->name, USERLEN,
 					(!(sptr->flags & FLAGS_GOTID)) ? "" :
 					sptr->auth,
-#ifdef INET6 
-					      inetntop(AF_INET6,
-						       (char *)&sptr->ip,
-						       mydummy, MYDUMMY_SIZE));
-#else
 					      inetntoa((char *)&sptr->ip));
-#endif
 			else
 			    {
 				if (mycmp(sptr->name, sptr->sockhost))
@@ -275,7 +243,6 @@ Reg	char	*host;
 	else
 		s = host;
 	strncpyzt(cptr->sockhost, s, sizeof(cptr->sockhost));
-	Debug((DEBUG_DNS,"get_sockhost %s",s));
 }
 
 /*
@@ -413,7 +380,7 @@ char	*comment;	/* Reason for the exit */
 				    sptr->user->host);
 # endif
 		    }
-		else if (sptr->exitc != EXITC_REF)
+		else if (sptr->exitc != EXITC_REF && sptr->exitc != EXITC_AREF)
 		    {
 # if defined(USE_SYSLOG) && defined(SYSLOG_CONN)
 			syslog(LOG_NOTICE, 
@@ -808,13 +775,18 @@ char	*comment;
 				** close_connection() has already been called,
 				** it makes MyConnect == False - krys
 				*/
-				if (sptr != cptr
+				if (sptr != cptr)
+					if (*lp->value.chptr->chname == '!')
+					    {
+						if (!(sptr->flags &FLAGS_QUIT))
+							lp->value.chptr->history = timeofday + LDELAYCHASETIMELIMIT;
+					    }
+					else if (
 #ifndef BETTER_CDELAY
-				    && !(sptr->flags & FLAGS_QUIT)
+						 !(sptr->flags & FLAGS_QUIT) &&
 #endif
-				    && is_chan_op(sptr, lp->value.chptr))
-					lp->value.chptr->history = timeofday + 
-							   DELAYCHASETIMELIMIT;
+						 is_chan_op(sptr, lp->value.chptr))
+						lp->value.chptr->history = timeofday + DELAYCHASETIMELIMIT;
 				remove_user_from_channel(sptr,lp->value.chptr);
 			    }
 
@@ -1002,6 +974,9 @@ char	*name;
 			   ME, RPL_STATSDEBUG, name, sp->is_lkmt,
 			   (u_int) (sp->is_lkt / sp->is_lkcnt), sp->is_lkMt,
 			   DELAYCHASETIMELIMIT);
+	sendto_one(cptr, ":%s %d %s :abuse protections %u strict %u", ME,
+		   RPL_STATSDEBUG, name, (bootopt & BOOT_PROT) ? 1 : 0,
+		   (bootopt & BOOT_STRICTPROT) ? 1 : 0);
 	sendto_one(cptr, ":%s %d %s :Client - Server",
 		   ME, RPL_STATSDEBUG, name);
 	sendto_one(cptr, ":%s %d %s :connected %u %u",
@@ -1040,7 +1015,7 @@ char *filename;
 	    {
 		last = motd->next;
 		MyFree(motd->line);
-		MyFree(motd);
+		MyFree((char *)motd);
 	    }
 	motd_tm = *localtime(&Sb.st_mtime);
 	(void)dgets(-1, NULL, 0); /* make sure buffer is at empty pos */

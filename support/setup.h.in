@@ -141,6 +141,7 @@
 #undef H_ERRNO_DECLARED
 
 /* Define if poll(2) must be used instead of select(2). */
+/* Note: some systems (e.g. linux 2.0.x) have a non-working poll() */
 #undef USE_POLL
 
 /* Define if the system provides POSIX sigaction. */
@@ -170,9 +171,6 @@
 
 /* Define as the resolver configuration file. */
 #undef IRC_RESCONF
-
-/* Define to enable IPv6 support */
-#undef INET6
 
 /* Define if you have the bcmp function.  */
 #undef HAVE_BCMP
@@ -213,6 +211,9 @@
 /* Define if you have the memset function.  */
 #undef HAVE_MEMSET
 
+/* Define if you have the poll function.  */
+#undef HAVE_POLL
+
 /* Define if you have the rindex function.  */
 #undef HAVE_RINDEX
 
@@ -249,14 +250,8 @@
 /* Define if you have the truncate function.  */
 #undef HAVE_TRUNCATE
 
-/* Define if you have the vsyslog function.  */
-#undef HAVE_VSYSLOG
-
 /* Define if you have the <arpa/inet.h> header file.  */
 #undef HAVE_ARPA_INET_H
-
-/* Define if you have the <arpa/nameser.h> header file.  */
-#undef HAVE_ARPA_NAMESER_H
 
 /* Define if you have the <ctype.h> header file.  */
 #undef HAVE_CTYPE_H
@@ -293,9 +288,6 @@
 
 /* Define if you have the <pwd.h> header file.  */
 #undef HAVE_PWD_H
-
-/* Define if you have the <resolv.h> header file.  */
-#undef HAVE_RESOLV_H
 
 /* Define if you have the <sgtty.h> header file.  */
 #undef HAVE_SGTTY_H

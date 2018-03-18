@@ -1,8 +1,8 @@
   Installing IRC - The Internet Relay Chat Program
   SGML version by Christophe Kalt
-  $Id: INSTALL.txt,v 1.23.2.1 1998/06/12 23:53:56 kalt Exp $
+  $Id: INSTALL.txt,v 1.30 1998/09/24 17:45:17 kalt Exp $
 
-  This document describes how to install, and configure IRC 2.9.5.
+  This document describes how to install, and configure IRC 2.10.
 
   11..  IInnssttaalllliinngg IIRRCC..
 
@@ -21,8 +21,17 @@
         changes the default directory into which ircd will install using
         ``make install''.  This defaults to /usr/local
 
+     ----ssbbiinnddiirr==DDIIRR
+        changes the default directory where the system admin executable
+        files will go. It is important to set this properly. (default is
+        prefix/sbin)
+
      ----lliibbddiirr==DDIIRR
         changes the default directory where most irc files will go.
+        (default is prefix/lib/ircd)
+
+     ----llooggddiirr==DDIIRR
+        changes the default directory where the irc log files will go.
         (default is prefix/lib/ircd)
 
      ----rreessccoonnff==FFIILLEE
@@ -51,8 +60,8 @@
         tells ``configure'' not to look for the zlib.  Defining this
         will keep you from using server link compression.
 
-     ----eennaabbllee--iipp66
-        Enable IPv6 support (See notes below)
+
+
 
 
   11..22..  NNootteess ffoorr CCyyggwwiinn3322 uusseerrss
@@ -63,7 +72,6 @@
   the Cygwin32 library with the ``coolview'' patch from Sergey Okhapkin.
   (This patch should be rolled in the next beta)
 
-
   When compiling on such system, you want to make sure that you have
   carefully followed the Cygwin32 installation notes.  In particular,
   you will need to make sure that the following files exist:
@@ -72,24 +80,6 @@
   Also, the IRC server needs a rreessoollvv..ccoonnff file in order to initialize
   the resolver.  This file can be anywhere (see configure options), and
   is typically in //eettcc on UNIX systems.
-
-
-  11..33..  NNootteess ccoonncceerrnniinngg IIPPvv66 ssuuppppoorrtt
-
-  This version of the IRC software has support for IPv6 systems.
-  However this is considered to be beta quality.  For this reason, it is
-  recommended that if you wish to run the server on an IPv6 system, you
-  have prior experience with this software.
-
-  The only part of the software that doesn't use IPv6 is the server
-  internal resolver.  It relies on the name servers defined in
-  ``/etc/resolv.conf'' to be IPv4 addresses.
-
-  This version was tested on the following IPv6 systems: Digital Unix,
-  Linux, NetBSD+INRIA.
-
-  Because IPv6 numeric addresses contains ``:'' characters, tthhee
-  sseeppaarraattoorr ffoorr tthhee sseerrvveerr ccoonnffiigguurraattiioonn ffiillee wwaass cchhaannggeedd ttoo ````%%''''.
 
 
   22..  TThhee ccoonnffiigg..hh ffiillee
@@ -119,19 +109,14 @@
   pprroodduuccttiioonn sseerrvveerr..
 
 
-  22..33..  SSPPAATTHH,, CCPPAATTHH,, MMPPAATTHH,, LLPPAATTHH,, PPPPAATTHH,, TTPPAATTHH
-
-  Define SPATH to be the directory path to ircd.  This is usually
-  /usr/local/sbin/ircd, unless you don't have installation permission
-  there.
+  22..33..  CCPPAATTHH,, MMPPAATTHH,, LLPPAATTHH,, PPPPAATTHH,, TTPPAATTHH,, QQPPAATTHH,, OOPPAATTHH
 
   Define CPATH to be the directory path to the ``ircd.conf'' file. This
   path is usually /usr/local/lib/ircd/ircd.conf. The format of this file
   will be discussed later.
 
-
   The LPATH #define should be set to ``/dev/null'' unless you plan to
-  debug the program.  Note that the logfile grows very quickly.
+  debug the ircd program.  Note that the logfile grows very quickly.
 
   Define MPATH to be the path to the ``motd'' (message of the day) file
   for the server.  Keep in mind this is automatically displayed whenever
@@ -142,9 +127,11 @@
   file.  It is used for storing the server's PID so a ps(1) isn't
   necessary.
 
-  Define TPATH to be the directory path to the ``ircd.tune'' file. This
-  path is usually /usr/local/lib/ircd/ircd.tune.  This file is used by
-  the server to optimize memory use.
+  Define QPATH to be the directory path to the ``iauth.conf'' file. This
+  path is usually /usr/local/lib/ircd/iauth.conf.  The format of this
+  file is described by a manual page.
+  The OPATH #define should be set to ``/dev/null'' unless you plan to
+  debug the iauth program.  Note that the logfile grows very quickly.
 
 
   22..44..  CCAACCHHEEDD__MMOOTTDD
@@ -193,9 +180,6 @@
   defined to only allow locally connected clients to be KILLed.
 
 
-
-
-
   22..99..  ZZIIPP__LLIINNKKSS,, ZZIIPP__LLEEVVEELL
 
   As of the 2.9.3 version of the server, server-server connections may
@@ -207,12 +191,12 @@
   you to control the compression level that will be used.  Values above
   5 will noticeably increase the CPU used by the server.
 
-  The zlib package may be found at  <http://quest.jpl.nasa.gov/zlib/>.
-  The data format used by the zlib library is described by RFCs (Request
-  for Comments) 1950 to 1952 in the files
-  <ftp://ds.internic.net/rfc/rfc1950.txt> (zlib format), rfc1951.txt
-  (deflate format) and rfc1952.txt (gzip format). These documents are
-  also available in other formats from
+  The zlib package may be found at
+  <http://www.cdrom.com/pub/infozip/zlib/>. The data format used by the
+  zlib library is described by RFCs (Request for Comments) 1950 to 1952
+  in the files  <ftp://ds.internic.net/rfc/rfc1950.txt> (zlib format),
+  rfc1951.txt (deflate format) and rfc1952.txt (gzip format). These
+  documents are also available in other formats from
   <ftp://ftp.uu.net/graphics/png/documents/zlib/zdoc-index.html>
 
 
@@ -249,8 +233,8 @@
   information, such as ``prefix'', ``irc_mode'', ``ircd_mode'' and
   ``ircd_dir''.
 
-  Now to build the package, type ``make''.  If everything goes will, you
-  can then install it by typing ``make install''.
+  Now to build the package, type ``make all''.  If everything goes will,
+  you can then install it by typing ``make install''.
 
   If you have trouble compiling ircd, copy Makefile.in to Makefile and
   edit Makefile as appropriate.
@@ -262,6 +246,7 @@
   per the instructions in this section and install it in the location
   you specified in the config.h file.  There is a sample conf file
   called example.conf in the doc/ directory.
+
   Appendix A (See INSTALL.appendix) describes the differences between IP
   addresses and host names.  If you are unfamiliar with this, you should
   probably scan through it before proceeding.
@@ -393,7 +378,6 @@
 
      AA  This specifies an Admin record.
 
-
      YYoouurr NNaammee && LLooccaattiioonn
         Use this field to say tell your FULL NAME and where in the world
         your machine is.  Be sure to add your City, State/Province and
@@ -460,6 +444,7 @@
         to properly configure outgoing connections.
 
         P:192.168.1.194:::6664:
+
      IInntteerrnneett IIPP## MMaasskk
         This defines where connections may come from and be accepted.
         The IP mask uses either *'s or 0's as wildcards. The following
@@ -475,7 +460,6 @@
      is decoded and compared segment by segment. Thus
 
      P:::128.2*.1.2:6664:
-
      will not match 128.20.1.2.
 
      PPoorrtt
@@ -674,7 +658,6 @@
         ident server be the same as the one given before the ``@''.
         Wildcards are permitted unless using a bitmask (e.g.
         1.2.3.0/24).
-
      PPaasssswwoorrdd
         The password that must be given by the client to be allowed on
         the server.
@@ -724,6 +707,7 @@
 
         Allow any clients from machines whose names end in ``.du.edu''
         to connect with no password.
+
         I:128.214.6.100::nic.funet.fi::1
 
         Allow clients from a machine with that IP number to connect.
@@ -856,6 +840,7 @@
         either ``Y'' or ``N'' meaning `Yes Let them in'' or ``No don't
         let them in''.  If the first word begins with neither ``Y'' or
         ``N'' the default is to let the person on.
+
      FFoorrmmaatt
 
         R:<Target Host Name>:<Program>:<User>:::
@@ -869,6 +854,7 @@
         connecting from.  If you wanted to restrict connects to IRC from
         ``orion.cair.du.edu'' then you would want to enter
         ``orion.cair.du.edu''.
+
 
      PPrrooggrraamm
         This is the external program to run to know if the user is
@@ -922,6 +908,7 @@
         If you specify an IP address, IP mask, or an IP bitmask, it will
         match clients connecting from the matching addresses, no matter
         if they resolve or not.
+
         You can prefix an IP address, an IP mask, or IP bitmask by ``=''
         in which case only non resolving matching hosts will be banned.
 
@@ -978,7 +965,7 @@
         This disallows all users from hosts with enddomain ``oulu.fi''
         access to your server between 8 and 12am, 2 and 7pm. Users get
         kicked off if they're already signed on when the line becomes
-        active (they'll get a warning 5 minutes ago).
+        active (they'll get a warning 5 minutes before).
 
         K:192.11.35.*::*:0:
 
@@ -1067,7 +1054,6 @@
         it.  If you were connecting to nic.funet.fi you would receive
         ``nic.funet.fi'' and that is what you should place in this
         field.
-
      TTAARRGGEETT PPOORRTT
         The INTERNET Port that you want to connect to on the TARGET
         machine. Most of the time this will be set to ``6667''.  If this
@@ -1186,6 +1172,7 @@
         we take an example of such:
 
         *.de  - a domain name matching all machines in Germany.
+
         Wildcard domains are useful in that ALL SERVERS in Germany (or
         any other domain area) can be shown as one to the rest of the
         world. Imagine 100 servers in Germany, it would be incredible
@@ -1262,6 +1249,9 @@
         the network.
 
 
+
+
+
   44..1111..  HHuubb ccoonnnneeccttiioonnss
 
 
@@ -1312,8 +1302,6 @@
 
      L:*.edu:*:*.au::
      L:*.com:*:*.au::
-
-
 
 
 
@@ -1379,40 +1367,54 @@
 
 
      VVeerrssiioonn MMaasskk
-        The matching version strings will be rejected.
+        The matching version number strings will be rejected.
 
      FFllaaggss
-        This field should contained flags as defined in ircd/s_debug.c
-
-        These flags show up in RPL_VERSION.
-
-        If any of the flags present in this field are found in the
-        RPL_VERSION of a server, this server will be denied connection.
-        This must be used with care.
+        The matching version flags strings will be rejected.
 
      SSeerrvveerr MMaasskk
         This field is used to match server names.  The V line will be
         used for servers matching the mask given in this field.
 
+     SSeerrvveerr TTyyppee
+        Both the VVeerrssiioonn MMaasskk and the FFllaaggss should be prefixed with the
+        server type identification.  This implementation uses the id
+        ``IIRRCC'' (starting with version 2.10).
+
      EExxaammpplleess
-        V:020901*::*::
+        V:IRC/021001*::*::
 
-        Disallows any server which version is 2.9.1* to connect.
+        Disallows any ``IRC'' server which version is 2.10.1* to
+        connect.
 
-        V:020901*:D:*::
+        V:IRC/021001*:IRC/*D*:*::
 
-        Disallows any server which version is 2.9.1* or which has been
-        compiled with DEBUGMODE defined to connect.
+        Disallows any ``IRC'' server which version is 2.10.1* or which
+        has been compiled with DEBUGMODE defined to connect.
+
+        V:*/0209*::*::
+
+        Disallows any server using the 2.9 protocol to connect.
 
      NNoottee
         It is possible to have and use multiple V-lines for the one
         server mask.
 
-        V:020901:*:*::
+        V:IRC/021001*:*:*::
 
-        V:020902:*:*::
+        V:IRC/021002*:*:*::
 
         is allowed.
+
+     PPrroottooccooll VVeerrssiioonn
+        Only the 4 first digit of the VVeerrssiioonn NNuummbbeerr are standard: they
+        define the protocol version.  The remaining of the string is
+        implementation dependant; matches on this part should be used
+        with particular identification.
+
+     FFllaaggss
+        are not standard.  Therefore, this field sshhoouulldd aallwwaayyss contain a
+        specific identification.
 
 
   44..1144..  EExxcclluuddeedd mmaacchhiinneess
@@ -1582,6 +1584,7 @@
         If you just have a question and don't want to subscribe to the
         list, mail to ircd-users@stealth.net.  Be sure to indicate which
         version you are using.
+
      DDeevveellooppmmeenntt
         Technical discussions and development are carried on ircd-
         dev@stealth.net.  People interested in very early testing,
@@ -1636,9 +1639,6 @@
 
   Reports should be sent to ircd-bugs@stealth.net.  Your report will be
   reviewed and forwarded to the appropriate mailing list.
-
-
-
 
 
 

@@ -1,6 +1,30 @@
-# @(#)$Id: RELEASE_NOTES,v 1.17 1998/02/18 21:47:55 kalt Exp $
+# @(#)$Id: RELEASE_NOTES,v 1.26 1998/09/24 17:45:18 kalt Exp $
 
-This is version 2.9.5 of the IRC software.
+This is version 2.10.0 of the IRC software.
+
+===============================================================================
+
+2.10 uses a new (server-server) protocol.
+
+New features in 2.10.0:
+
+	* slave process handles authentication (ident lookups, ..).
+	* creation of a collision proof type of channels (prefix !).
+	* opless !channels may be reoped by the server (mode +r).
+	* added channel mode +e (EFnet's exceptions to bans).
+	* added channel mode +I (invitations).
+	* /invite can now be used to override channel bans & limit.
+	* away status is propagated again. (away messages are not).
+	* users need +o (or +v) to speak on a channel where they're banned.
+
+Important configuration changes between 2.9.x and 2.10.x:
+
+	* The V line format has changed!
+
+------
+
+If the irc daemon is unable to bind any socket to listen to for incoming
+connections, it will die rather than stay alive.
 
 ===============================================================================
 
