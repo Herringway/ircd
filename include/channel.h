@@ -17,6 +17,8 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#ifndef	__channel_include__
+#define __channel_include__
 #define CREATE 1	/* whether a channel should be
 			   created or just tested for existance */
 
@@ -26,4 +28,11 @@
 
 #define ChannelExists(n)	(find_channel(n, NullChn) != NullChn)
 
+#ifndef	V28PlusOnly
 #define	MAXMODEPARAMS	6
+#else
+#include "msg.h"
+#define	MAXMODEPARAMS	(MAXPARA-2)
+#endif
+
+#endif

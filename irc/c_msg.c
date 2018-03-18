@@ -223,7 +223,8 @@ aClient *sptr, *cptr;
 int parc;
 char *parv[];
 {
-  sprintf(mybuf, "*** %s changed the topic to %s", parv[0], parv[1]);
+  sprintf(mybuf, "*** %s changed the topic on %s to: %s",
+	  parv[0], parv[1], parv[2]);
   putline(mybuf);
 }
 
@@ -444,7 +445,6 @@ int	parc;
 char	*parv[];
 {
 	anIgnore *iptr;
-	int	ignoreflag = 0;
 
 	iptr = find_ignore(parv[0], (anIgnore *)NULL, userhost);
 	if ((iptr != (anIgnore *)NULL) && iptr->flags & IGNORE_PRIVATE)
