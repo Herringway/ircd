@@ -1036,7 +1036,7 @@ char	*parv[];
 	char	*p = NULL;
 	int	found;
 
-	if (check_registered(sptr))
+	if (check_registered_user(sptr))
 		return 0;
 
     	if (parc < 2)
@@ -1632,11 +1632,13 @@ char	*parv[];
 	extern	char *crypt();
 #endif /* CRYPT_OPER_PASSWORD */
 
+	if (check_registered_user(sptr))
+		return 0;
 
 	name = parc > 1 ? parv[1] : NULL;
 	password = parc > 2 ? parv[2] : NULL;
 
-	if (MyClient(sptr) && (BadPtr(name) || BadPtr(password)))
+	if (!IsServer(cptr) && (BadPtr(name) || BadPtr(password)))
 	    {
 		sendto_one(sptr, err_str(ERR_NEEDMOREPARAMS),
 			   me.name, parv[0], "OPER");
@@ -1677,12 +1679,12 @@ char	*parv[];
         /* use first two chars of the password they send in as salt */
 
         /* passwd may be NULL. Head it off at the pass... */
-        salt[0]='\0';
-        if(password)
+        salt[0] = '\0';
+        if (password && aconf->passwd)
 	    {
-        	salt[0]=aconf->passwd[0];
-		salt[1]=aconf->passwd[1];
-		salt[2]='\0';
+        	salt[0] = aconf->passwd[0];
+		salt[1] = aconf->passwd[1];
+		salt[2] = '\0';
 		encr = crypt(password, salt);
 	    }
 	else
@@ -1815,11 +1817,11 @@ char	*parv[];
 	Reg1	char	*s;
 	Reg2	int	i, len;
 
-	if (parc > 2)
-		(void)m_userhost(cptr, sptr, parc-1, parv+1);
-
 	if (check_registered(sptr))
 		return 0;
+
+	if (parc > 2)
+		(void)m_userhost(cptr, sptr, parc-1, parv+1);
 
 	if (parc < 2)
 	    {
