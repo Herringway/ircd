@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: ircd.c,v 1.35 1998/10/10 12:19:33 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: ircd.c,v 1.37 1998/12/13 00:02:35 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -311,17 +311,17 @@ time_t	currenttime;
 	if (!lastsort || lastsort < currenttime)
 	    {
 		for (aconf = conf; aconf; aconf = aconf->next)
-			if (!(cp = aconf->ping) || !cp->seq || !cp->recv)
+			if (!(cp = aconf->ping) || !cp->seq || !cp->recvd)
 				aconf->pref = -1;
 			else
 			    {
-				f = (double)cp->recv / (double)cp->seq;
+				f = (double)cp->recvd / (double)cp->seq;
 				f2 = pow(f, (double)20.0);
 				if (f2 < (double)0.001)
 					f = (double)0.001;
 				else
 					f = f2;
-				f2 = (double)cp->ping / (double)cp->recv;
+				f2 = (double)cp->ping / (double)cp->recvd;
 				f = f2 / f;
 				if (f > 100000.0)
 					f = 100000.0;
@@ -1073,7 +1073,7 @@ time_t	delay;
  * Here we just open that file and make sure it is opened to fd 2 so that
  * any fprintf's to stderr also goto the logfile.  If the debuglevel is not
  * set from the command line by -x, use /dev/null as the dummy logfile as long
- * as DEBUGMODE has been defined, else dont waste the fd.
+ * as DEBUGMODE has been defined, else don't waste the fd.
  */
 static	void	open_debugfile()
 {

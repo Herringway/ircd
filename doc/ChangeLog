@@ -1,3 +1,68 @@
+1998-12-24  Christophe Kalt
+
+	* s_service.c: using FLAGS_CBURST for services has too many
+	implications; reverted.
+	
+	* struct_def.h, s_bsd.c, s_zip.c: removed requirement for
+	inflate() to never fill up the uncompression output buffer, an
+	unlikely situation which is now dealt with. (mostly from Q).
+
+1998-12-21  Christophe Kalt
+
+
+	* s_user.c:
+		* [RFC] suppressed an error reply for notices in m_message().
+		* server notices to +n channels were failing. (Reported by Q).
+
+	* a_defines.h: INET6 fix for OSF (from Roar Thronæs).
+
+	* os.h: INET6 fix for OSF (from Roar Thronæs).
+
+	* channel.c: added check against 'duplicate joins' in m_njoin().
+
+1998-12-14  Christophe Kalt
+
+	* channel.c:
+		* yet another +a/+r fix in set_mode().
+		* send_channel_modes() would occasionnally send duplicate
+		bans. (Reported by Robert Martin-Legene <robert@irc.ircnet.dk>)
+
+	* iauth.c, a_io.c: added nonexistant INET6 code.
+	
+	* os.h, nameser_def.h, resolv_def.h: OSF portability fix from Roar
+	Thronæs.
+
+	* s_auth.c: added missing INET6 code. (Roar Thronæs)
+
+1998-09-25  Christophe Kalt
+	
+	* configure.in: Check for IPv6 system type and update $LIBS (from
+	KIKUCHI Takahiro <kick@kyoto.wide.ad.jp>)
+
+	* bsd.c, os.h, parse.c, struct_def.h, support.c, support_ext.h,
+	c_bsd.c, c_version.c, c_version_ext.h, irc.c, swear.c, channel.c,
+	chkconf.c, ircd.c, nameser_def.h, res.c, res_def.h, res_init.c,
+	resolv_def.h, s_auth.c, s_bsd.c, s_conf.c, s_debug.c, s_misc.c,
+	s_serv.c, s_user.c, acconfig.h, configure.in: merged 2.9.5+IPv6.
+
+1998-04-12  Christophe Kalt
+
+	* configure.in, s_debug.c: vsyslog() isn't necessarely available
+	even if USE_STDARG is defined. (Digital Unix)
+
+1998-04-04  Christophe Kalt
+
+	* c_version_ext.h, c_version.c, irc.c, swear.c: Digital Unix 4.0B
+	port (Roar Thronæs <roart@nvg.ntnu.no>)
+
+1998-12-12  Christophe Kalt
+
+	* channel.c: +a/+r fix for !channels.
+
+1998-11-20  Christophe Kalt
+
+	* irc.c: allocate me.info (fix by Helmut Franzke <hf@rp-online.de>).
+
 2.10.1
 
 1998-11-12  Christophe Kalt

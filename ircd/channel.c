@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static	char rcsid[] = "@(#)$Id: channel.c,v 1.77 1998/10/29 07:55:13 kalt Exp $";
+static	char rcsid[] = "@(#)$Id: channel.c,v 1.83 1998/12/21 15:06:08 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -269,7 +269,12 @@ aChannel *chptr;
 		char *ip = NULL;
 
 		if (MyConnect(cptr))
+#ifdef 	INET6
+			ip = (char *) inetntop(AF_INET6, (char *)&cptr->ip,
+					       mydummy, MYDUMMY_SIZE);
+#else
 			ip = (char *) inetntoa((char *)&cptr->ip);
+#endif
 
 		if (ip == NULL || strcmp(ip, cptr->user->host))
 		    {
@@ -478,7 +483,7 @@ aChannel *chptr;
 		return 0;
 	if (chptr)
 		if ((lp = find_user_link(chptr->members, cptr)))
-			chanop = (lp->flags & CHFL_CHANOP);
+			chanop = (lp->flags & (CHFL_CHANOP|CHFL_UNIQOP));
 	if (chanop)
 		chptr->reop = 0;
 	return chanop;
@@ -722,9 +727,14 @@ uncommented may just lead to desynchs..
 	if (cptr->serv->version & SV_NMODE)
 	    {
 		if (modebuf[1] || *parabuf)
+		    {
 			/* only needed to help compatibility */
 			sendto_one(cptr, ":%s MODE %s %s %s",
 				   ME, chptr->chname, modebuf, parabuf);
+			*parabuf = '\0';
+			*modebuf = '+';
+			modebuf[1] = '\0';
+		    }
 		send_mode_list(cptr, chptr->chname, chptr->mlist,
 			       CHFL_EXCEPTION, 'e');
 		send_mode_list(cptr, chptr->chname, chptr->mlist,
@@ -1324,18 +1334,25 @@ char	*parv[], *mbuf, *pbuf;
 					sendto_one(sptr,
 					   err_str(ERR_CHANOPRIVSNEEDED,
 						   parv[0]), chptr->chname);
+				else if (((*ip == MODE_ANONYMOUS &&
+					   whatt == MODE_ADD &&
+					   *chptr->chname == '#') ||
+					  (*ip == MODE_REOP &&
+					   *chptr->chname != '!')) &&
+					 !IsServer(sptr))
+					sendto_one(cptr,
+						   err_str(ERR_UNKNOWNMODE,
+						   parv[0]), *curr);
 				else if ((*ip == MODE_REOP ||
 					  *ip == MODE_ANONYMOUS) &&
 					 !IsServer(sptr) &&
-					 !(is_chan_op(sptr,chptr)&CHFL_UNIQOP))
+					 !(is_chan_op(sptr,chptr) &CHFL_UNIQOP)
+					 && *chptr->chname == '!')
 					/* 2 modes restricted to UNIQOP */
 					sendto_one(sptr,
 					   err_str(ERR_CHANOPRIVSNEEDED,
 						   parv[0]), chptr->chname);
-				else if (!(*ip == MODE_ANONYMOUS &&
-					   whatt == MODE_ADD &&
-					   !IsServer(sptr) &&
-					   *chptr->chname == '#'))
+				else
 				    {
 					/*
 				        ** If the channel is +s, ignore +p
@@ -1360,10 +1377,6 @@ char	*parv[], *mbuf, *pbuf;
 					count++;
 					*penalty += 2;
 				    }
-				else
-					sendto_one(sptr,
-					   err_str(ERR_CHANOPRIVSNEEDED,
-						   parv[0]), chptr->chname);
 			    }
 			else if (!IsServer(cptr))
 				sendto_one(cptr, err_str(ERR_UNKNOWNMODE,
@@ -2265,6 +2278,14 @@ char	*parv[];
 				return;
 			    }
 		    }
+		/* make sure user isn't already on channel */
+		if (IsMember(acptr, chptr))
+		    {
+			sendto_flag(SCH_ERROR, "NJOIN protocol error from %s",
+				    get_client_name(cptr, TRUE));
+			sendto_one(cptr, "ERROR :NJOIN protocol error");
+			continue;
+		    }
 		/* add user to channel */
 		add_user_to_channel(chptr, acptr, chop);
 		/* build buffer for NJOIN capable servers */
@@ -2915,7 +2936,7 @@ char	*parv[];
 			break;
 		lp = c2ptr->user->channel;
 		/*
-		 * dont show a client if they are on a secret channel or
+		 * don't show a client if they are on a secret channel or
 		 * they are on a channel sptr is on since they have already
 		 * been show earlier. -avalon
 		 */

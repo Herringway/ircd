@@ -77,7 +77,7 @@
 
 /*
  *      @(#)nameser.h	8.1 (Berkeley) 6/2/93
- *	$Id: nameser_def.h,v 1.1 1997/09/03 17:45:52 kalt Exp $
+ *	$Id: nameser_def.h,v 1.3 1998/12/13 00:19:03 kalt Exp $
  */
 
 /*
