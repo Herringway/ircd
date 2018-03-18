@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: mod_socks.c,v 1.11 1999/01/18 21:38:59 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: mod_socks.c,v 1.11.2.1 1999/02/18 13:06:19 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -195,6 +195,7 @@ AnInstance *self;
 	
 	mydata = (struct socks_private *) malloc(sizeof(struct socks_private));
 	bzero((char *) mydata, sizeof(struct socks_private));
+	mydata->options = 0;
 	mydata->cache = NULL;
 	mydata->lifetime = CACHETIME;
 
