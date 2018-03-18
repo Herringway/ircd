@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_serv.c	2.50 07 Nov 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_serv.c	2.55 2/7/94 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -32,6 +32,9 @@ Computing Center and Jarkko Oikarinen";
 #include "numeric.h"
 #include "msg.h"
 #include "channel.h"
+#if defined(PCS) || defined(AIX) || defined(DYNIXPTX) || defined(SVR3)
+#include <time.h>
+#endif
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <utmp.h>
@@ -290,16 +293,20 @@ char	*parv[];
 	** Also, changed to check other "difficult" characters, now
 	** that parse lets all through... --msa
 	*/
+	if (strlen(host) > HOSTLEN)
+		host[HOSTLEN] = '\0';
 	for (ch = host; *ch; ch++)
 		if (*ch <= ' ' || *ch > '~')
-		    {
-			sendto_one(sptr,"ERROR :Bogus server name (%s)",
-		   		   sptr->name, host);
-			sendto_ops("Bogus server name (%s) from %s",
-				   host, get_client_name(cptr,FALSE));
-			return 0;
-		    }
-	
+			break;
+	if (*ch || !index(host, '.'))
+	    {
+		sendto_one(sptr,"ERROR :Bogus server name (%s)",
+			   sptr->name, host);
+		sendto_ops("Bogus server name (%s) from %s", host,
+			   get_client_name(cptr, TRUE));
+		return 0;
+	    }
+
 	if (IsPerson(cptr))
 	    {
 		/*
@@ -309,7 +316,7 @@ char	*parv[];
 		sendto_one(cptr, err_str(ERR_ALREADYREGISTRED),
 			   me.name, parv[0]);
 		sendto_ops("User %s trying to become a server %s",
-			   get_client_name(cptr,FALSE),host);
+			   get_client_name(cptr, TRUE),host);
 		return 0;
 	    }
 	/* *WHEN* can it be that "cptr != sptr" ????? --msa */
@@ -369,7 +376,7 @@ char	*parv[];
 		    (!aconf->port || (hop > aconf->port)))
 		    {
 	      		sendto_ops("Leaf-only link %s->%s - Closing",
-				   get_client_name(cptr, FALSE),
+				   get_client_name(cptr,  TRUE),
 				   aconf->host ? aconf->host : "*");
 	      		sendto_one(cptr, "ERROR :Leaf-only link, sorry.");
       			return exit_client(cptr, cptr, cptr, "Leaf Only");
@@ -381,9 +388,9 @@ char	*parv[];
 		    (aconf->port && (hop > aconf->port)) )
 		    {
 			sendto_ops("Non-Hub link %s introduced %s(%s).",
-				   get_client_name(cptr, FALSE), host,
+				   get_client_name(cptr,  TRUE), host,
 				   aconf ? (aconf->host ? aconf->host : "*") :
-				   "*");
+				   "!");
 			return exit_client(cptr, cptr, cptr,
 					   "Too many servers");
 		    }
@@ -476,7 +483,7 @@ char	*parv[];
 	default :
 		ircstp->is_ref++;
 		sendto_ops("Received unauthorized connection from %s.",
-		           get_client_name(cptr,FALSE));
+		           get_client_host(cptr));
 		return exit_client(cptr, cptr, cptr, "No C/N conf lines");
 	}
 
@@ -775,11 +782,11 @@ char	*parv[];
 	else
 		mask = parc < 2 ? NULL : parv[1];
 
-	for (acptr = client; acptr; acptr = acptr->next) 
+	for (acptr = client, (void)collapse(mask); acptr; acptr = acptr->next) 
 	    {
 		if (!IsServer(acptr) && !IsMe(acptr))
 			continue;
-		if (!BadPtr(mask) && matches(mask, acptr->name))
+		if (!BadPtr(mask) && match(mask, acptr->name))
 			continue;
 		sendto_one(sptr, rpl_str(RPL_LINKS),
 			   me.name, parv[0], acptr->name, acptr->serv->up,
@@ -1037,8 +1044,8 @@ char	*parv[];
 				   get_client_name(acptr, TRUE) :
 				   get_client_name(acptr, FALSE),
 				   (int)DBufLength(&acptr->sendQ),
-				   (int)acptr->sendM, (int)acptr->sendB,
-				   (int)acptr->receiveM, (int)acptr->receiveB,
+				   (int)acptr->sendM, (int)acptr->sendK,
+				   (int)acptr->receiveM, (int)acptr->receiveK,
 				   time(NULL) - acptr->firsttime);
 		    }
 		break;
@@ -1231,16 +1238,17 @@ char	*parv[];
 				!= HUNTED_ISME)
 			return 0;
 
+	(void)collapse(parv[1]);
 	for (acptr = client; acptr; acptr = acptr->next)
 	    {
 		if (parc>1)
 			if (!IsServer(acptr) && acptr->user)
 			    {
-				if (matches(parv[1], acptr->user->server))
+				if (match(parv[1], acptr->user->server))
 					continue;
 			    }
 			else
-	      			if (matches(parv[1], acptr->name))
+	      			if (match(parv[1], acptr->name))
 					continue;
 
 		switch (acptr->status)
@@ -1359,10 +1367,15 @@ char	*parv[];
 
 	for (aconf = conf; aconf; aconf = aconf->next)
 		if (aconf->status == CONF_CONNECT_SERVER &&
-		    (matches(parv[1], aconf->name) == 0 ||
-		     matches(parv[1], aconf->host) == 0 ||
-		     matches(parv[1], index(aconf->host, '@')+1) == 0))
+		    matches(parv[1], aconf->name) == 0)
 		  break;
+	/* Checked first servernames, then try hostnames. */
+	if (!aconf)
+        	for (aconf = conf; aconf; aconf = aconf->next)
+                	if (aconf->status == CONF_CONNECT_SERVER &&
+                            (matches(parv[1], aconf->host) == 0 ||
+                             matches(parv[1], index(aconf->host, '@')+1) == 0))
+                  		break;
 
 	if (!aconf)
 	    {
@@ -1550,7 +1563,7 @@ char	*parv[];
 #ifdef USE_SYSLOG
 	syslog(LOG_INFO, "REHASH From %s\n", get_client_name(sptr, FALSE));
 #endif
-	return rehash(cptr, sptr, 0);
+	return rehash(cptr, sptr, (parc > 1) ? ((*parv[1] == 'q')?2:0) : 0);
 }
 #endif
 
@@ -1722,7 +1735,8 @@ char	*parv[];
 			else
 				sendto_one(sptr, rpl_str(RPL_TRACESERVER),
 					   me.name, parv[0], class, link_s[i],
-					   link_u[i], name, "*", "*", me.name);
+					   link_u[i], name, *(acptr->serv->by) ?
+					   acptr->serv->by : "*", "*", me.name);
 			cnt++;
 			break;
 		case STAT_SERVICE:
@@ -1778,6 +1792,8 @@ char	*parv[];
 	int	fd;
 	char	line[80];
 	Reg1	char	 *tmp;
+	struct	stat	sb;
+	struct	tm	*tm;
 
 	if (check_registered(sptr))
 		return 0;
@@ -1796,7 +1812,12 @@ char	*parv[];
 		sendto_one(sptr, err_str(ERR_NOMOTD), me.name, parv[0]);
 		return 0;
 	    }
+	(void)fstat(fd, &sb);
 	sendto_one(sptr, rpl_str(RPL_MOTDSTART), me.name, parv[0], me.name);
+	tm = localtime(&sb.st_mtime);
+	sendto_one(sptr, ":%s %d %s :- %d/%d/%d %d:%02d", me.name, RPL_MOTD,
+		   parv[0], tm->tm_mday, tm->tm_mon + 1, 1900 + tm->tm_year,
+		   tm->tm_hour, tm->tm_min);
 	(void)dgets(-1, NULL, 0); /* make sure buffer is at empty pos */
 	while (dgets(fd, line, sizeof(line)-1) > 0)
 	    {

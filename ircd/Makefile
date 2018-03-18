@@ -50,11 +50,11 @@ CFLAGS= -g -I${INCLUDEDIR}
 #IRCDLIBS=-lBSD
 #
 # Solaris 2
-#IRCDLIBS= -lsocket -lnsl -lresolv
+#IRCDLIBS=-lsocket -lnsl
 #
 # ESIX
 #CFLAGS=-O -I${INCLUDEDIR} -I/usr/ucbinclude
-#IRCDLIBS=-L/usr/ucblib -L/usr/lib -lsocket -lucb -lresolv -lns -lnsl
+#IRCDLIBS=-L/usr/ucblib -L/usr/lib -lsocket -lucb -lns -lnsl
 #
 #When profiling:
 #IRCDLIBS=-lc_p
@@ -77,9 +77,9 @@ LINTFLAGS=-hba
 #
 #RES=res_init.o res_comp.o res_mkquery.o
 
-COMMONOBJS=../common/bsd.o ../common/dbuf.o \
-           ../common/packet.o ../common/send.o\
-           ../common/match.o ../common/parse.o ../common/support.o
+COMMONOBJS=../common/bsd.o ../common/dbuf.o ../common/packet.o \
+           ../common/send.o ../common/match.o ../common/parse.o \
+           ../common/support.o
 
 OBJS=channel.o class.o hash.o ircd.o list.o res.o s_auth.o s_bsd.o s_conf.o \
 	s_debug.o s_err.o s_misc.o s_numeric.o s_serv.o s_user.o whowas.o \
@@ -105,7 +105,8 @@ ircd: $(OBJS) ../include/patchlevel.h
 
 chkconf: ../include/struct.h ../include/config.h ../include/sys.h \
 	 ../include/common.h chkconf.c
-	$(CC) $(CFLAGS) chkconf.c $(LDFLAGS) $(IRCDLIBS) -o chkconf
+	$(CC) $(CFLAGS) chkconf.c ../common/match.o \
+	$(LDFLAGS) $(IRCDLIBS) -o chkconf
 
 saber: $(SRC)
 	#load -I../include $(SRC) $(COMMONSRC) version.c $(IRCDLIBS)
@@ -137,10 +138,10 @@ lint:
 
 install: all
 	-if [ ! -d ${IRCDDIR} -a ! -f ${IRCDDIR} ] ; then \
-		-mkdir ${IRCDDIR}; \
+		mkdir ${IRCDDIR}; \
 	fi
-	../install -c -s -m ${IRCDMODE} ircd ${BINDIR}
-	../install -c -s -m 700 chkconf ${BINDIR}
+	../bsdinstall -c -s -m ${IRCDMODE} ircd ${BINDIR}
+	../bsdinstall -c -s -m 700 chkconf ${BINDIR}
 	$(CP) ../doc/example.conf ${IRCDDIR}
 	$(TOUCH) ${IRCDDIR}/ircd.motd
 	$(RM) -f ${IRCDDIR}/ircd.m4

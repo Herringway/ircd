@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_user.c	2.68 07 Nov 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_user.c	2.74 2/8/94 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -124,7 +124,7 @@ Reg2	char	*ch;	/* search string (may include wilds) */
 	    {
 		if (IsService(next))
 			continue;
-		if (!matches(ch,next->name) || !matches(next->name,ch))
+		if (!match(ch, next->name) || !matches(next->name, ch))
 			break;
 	    }
 	return next;
@@ -177,7 +177,7 @@ int	server, parc;
 		if (acptr->from == sptr->from && !MyConnect(acptr))
 			acptr = NULL;
 	if (!acptr)
-		for (acptr = client;
+		for (acptr = client, (void)collapse(parv[server]);
 		     (acptr = next_client(acptr, parv[server]));
 		     acptr = acptr->next)
 		    {
@@ -322,43 +322,45 @@ char	*nick, *username;
         char	*parv[3];
 	short	oldstatus = sptr->status;
 	anUser	*user = sptr->user;
+	int	i;
 
-	sptr->user->last = time(NULL);
+	user->last = time(NULL);
 	parv[0] = sptr->name;
 	parv[1] = parv[2] = NULL;
 
 	if (MyConnect(sptr))
 	    {
-		if (check_client(sptr))
+		if ((i = check_client(sptr)))
 		    {
-			sendto_ops("Received unauthorized connection from %s.",
-				   get_client_name(sptr,FALSE));
+			sendto_ops("%s from %s.", i == -3 ?
+						  "Too many connections" :
+			 			  "Unauthorized connection",
+				   get_client_host(sptr));
 			ircstp->is_ref++;
-			return exit_client(cptr, sptr, &me,
-					   "No Authorization");
+			return exit_client(cptr, sptr, &me, i == -3 ?
+					     "No more connections" :
+					     "No Authorization");
 		      } 
 		if (IsUnixSocket(sptr))
 			strncpyzt(user->host, me.sockhost, HOSTLEN+1);
 		else
 			strncpyzt(user->host, sptr->sockhost, HOSTLEN+1);
 		aconf = sptr->confs->value.aconf;
-		if (sptr->flags & FLAGS_GOTID)
-			strncpyzt(sptr->user->username, sptr->username,
-				  USERLEN+1);
-		else if (sptr->flags & FLAGS_DOID)
+		if (sptr->flags & FLAGS_DOID && !(sptr->flags & FLAGS_GOTID))
 		    {
 			/* because username may point to user->username */
 			char	temp[USERLEN+1];
 
 			strncpyzt(temp, username, USERLEN+1);
-			*sptr->user->username = '~';
-			(void)strncpy(&sptr->user->username[1], temp,
-				  USERLEN);
-			sptr->user->username[USERLEN] = '\0';
+			*user->username = '~';
+			(void)strncpy(&user->username[1], temp, USERLEN);
+			user->username[USERLEN] = '\0';
 			
 		    }
+		else if (sptr->flags & FLAGS_GOTID)
+			strncpyzt(user->username, sptr->username, USERLEN+1);
 		else
-			strncpyzt(sptr->user->username, username, USERLEN+1);
+			strncpyzt(user->username, username, USERLEN+1);
 
 		if (!BadPtr(aconf->passwd) &&
 		    !StrEq(sptr->passwd, aconf->passwd))
@@ -375,20 +377,20 @@ char	*nick, *username;
 		if (find_kill(sptr))
 		    {
 			ircstp->is_ref++;
-			return exit_client(cptr, sptr, sptr, "K-lined");
+			return exit_client(cptr, sptr, &me, "K-lined");
 		    }
 #ifdef R_LINES
 		if (find_restrict(sptr))
 		    {
 			ircstp->is_ref++;
-			return exit_client(cptr, sptr, sptr , "R-lined");
+			return exit_client(cptr, sptr, &me , "R-lined");
 		    }
 #endif
 		if (oldstatus == STAT_MASTER && MyConnect(sptr))
 			(void)m_oper(&me, sptr, 1, parv);
 	    }
 	else
-		strncpyzt(sptr->user->username, username, USERLEN+1);
+		strncpyzt(user->username, username, USERLEN+1);
 	SetClient(sptr);
 	if (MyConnect(sptr))
 	    {
@@ -411,9 +413,28 @@ char	*nick, *username;
 		(void)m_motd(sptr, sptr, 1, parv);
 		nextping = time(NULL);
 	    }
+	else if (IsServer(cptr))
+	    {
+		aClient	*acptr;
+
+		if ((acptr = find_server(user->server, NULL)) &&
+		    acptr->from != sptr->from)
+		   {
+			sendto_ops("Bad User [%s] :%s USER %s %s, != %s[%s]",
+				cptr->name, nick, user->username, user->server,
+				acptr->name, acptr->from->name);
+			sendto_one(cptr, ":%s KILL %s :%s (%s != %s[%s])",
+				   me.name, sptr->name, me.name, user->server,
+				   acptr->from->name, acptr->from->sockhost);
+			sptr->flags |= FLAGS_KILLED;
+			return exit_client(sptr, sptr, &me,
+					   "USER server wrong direction");
+		   }
+	    }
+
 	sendto_serv_butone(cptr, "NICK %s :%d", nick, sptr->hopcount+1);
 	sendto_serv_butone(cptr, ":%s USER %s %s %s :%s", nick,
-			   sptr->user->username, user->host,
+			   user->username, user->host,
 			   user->server, sptr->info);
 	if (MyConnect(sptr))
 		send_umode_out(cptr, sptr, 0);
@@ -421,7 +442,7 @@ char	*nick, *username;
 	check_services_butone(SERVICE_WANT_NICK, sptr, "NICK %s :%d",
 				nick, sptr->hopcount);
 	check_services_butone(SERVICE_WANT_USER, sptr, ":%s USER %s %s %s :%s",
-				nick, sptr->user->username, user->host,
+				nick, user->username, user->host,
 				user->server, sptr->info);
 #endif
 
@@ -979,6 +1000,7 @@ char	*parv[];
 		mask = NULL;
 	else
 		channame = mask;
+	(void)collapse(mask);
 
 	if (IsChannelName(channame))
 	    {
@@ -1043,11 +1065,11 @@ char	*parv[];
 		*/
 		if (showperson &&
 		    (!mask ||
-		     matches(mask, acptr->name) == 0 ||
-		     matches(mask, acptr->user->username) == 0 ||
-		     matches(mask, acptr->user->host) == 0 ||
-		     matches(mask, acptr->user->server) == 0 ||
-		     matches(mask, acptr->info) == 0))
+		     match(mask, acptr->name) == 0 ||
+		     match(mask, acptr->user->username) == 0 ||
+		     match(mask, acptr->user->host) == 0 ||
+		     match(mask, acptr->user->server) == 0 ||
+		     match(mask, acptr->info) == 0))
 			do_who(sptr, acptr, ch2ptr);
 	    }
 	sendto_one(sptr, rpl_str(RPL_ENDOFWHO), me.name, parv[0],
@@ -1109,6 +1131,7 @@ char	*parv[];
 		int	invis, showperson, member, wilds;
 
 		found = 0;
+		(void)collapse(nick);
 		wilds = (index(nick, '?') || index(nick, '*'));
 		for (acptr = client; (acptr = next_client(acptr, nick));
 		     acptr = acptr->next)
@@ -1269,8 +1292,6 @@ char	*parv[];
 
  	user = make_user(sptr);
 
-	strncpyzt(sptr->info, realname, sizeof(sptr->info));
-
 	if (!MyConnect(sptr))
 	    {
 		strncpyzt(user->server, server, sizeof(user->server));
@@ -1291,6 +1312,7 @@ char	*parv[];
 	strncpyzt(user->host, host, sizeof(user->host));
 	strncpyzt(user->server, me.name, sizeof(user->server));
 user_finish:
+	strncpyzt(sptr->info, realname, sizeof(sptr->info));
 	if (sptr->name[0]) /* NICK already received, now we have USER... */
 		return register_user(cptr, sptr, sptr->name, username);
 	else
@@ -1951,7 +1973,7 @@ char	*parv[];
 	return 0;
 }
 
-#ifndef NPATH
+#if defined(NPATH)
 int	m_note(cptr, sptr, parc, parv)
 aClient	*cptr, *sptr;
 int	parc;

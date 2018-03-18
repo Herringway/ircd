@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static	char sccsid[] = "@(#)channel.c	2.53 07 Nov 1993 (C) 1990 University of Oulu, Computing\
+static	char sccsid[] = "@(#)channel.c	2.58 2/18/94 (C) 1990 University of Oulu, Computing\
  Center and Jarkko Oikarinen";
 #endif
 
@@ -171,13 +171,15 @@ char	*banid;
 	Reg1	Link	*ban;
 	Reg2	int	cnt = 0, len = 0;
 
+	if (MyClient(cptr))
+		(void)collapse(banid);
 	for (ban = chptr->banlist; ban; ban = ban->next)
 	    {
 		len += strlen(ban->value.cp);
 		if (MyClient(cptr) &&
 		    ((len > MAXBANLENGTH) || (++cnt >= MAXBANS) ||
-		     !matches(ban->value.cp, banid) ||
-		     !matches(banid, ban->value.cp)))
+		     !match(ban->value.cp, banid) ||
+		     !match(banid, ban->value.cp)))
 			return -1;
 		else if (!mycmp(ban->value.cp, banid))
 			return -1;
@@ -235,7 +237,7 @@ aChannel *chptr;
 				  cptr->user->host);
 
 	for (tmp = chptr->banlist; tmp; tmp = tmp->next)
-		if (matches(tmp->value.cp, s) == 0)
+		if (match(tmp->value.cp, s) == 0)
 			break;
 	return (tmp);
 }
@@ -454,6 +456,8 @@ void	send_channel_modes(cptr, chptr)
 aClient *cptr;
 aChannel *chptr;
 {
+	if (*chptr->chname != '#')
+		return;
 
 	*modebuf = *parabuf = '\0';
 	channel_modes(cptr, modebuf, parabuf, chptr);
@@ -463,15 +467,19 @@ aChannel *chptr;
 		sendto_one(cptr, ":%s MODE %s %s %s",
 			   me.name, chptr->chname, modebuf, parabuf);
 
-	*modebuf = *parabuf = '\0';
+	*parabuf = '\0';
+	*modebuf = '+';
+	modebuf[1] = '\0';
 	send_mode_list(cptr, chptr->chname, chptr->banlist, CHFL_BAN, 'b');
-	if (*modebuf || *parabuf)
+	if (modebuf[1] || *parabuf)
 		sendto_one(cptr, ":%s MODE %s %s %s",
 			   me.name, chptr->chname, modebuf, parabuf);
 
-	*modebuf = *parabuf = '\0';
+	*parabuf = '\0';
+	*modebuf = '+';
+	modebuf[1] = '\0';
 	send_mode_list(cptr, chptr->chname, chptr->members, CHFL_VOICE, 'v');
-	if (*modebuf || *parabuf)
+	if (modebuf[1] || *parabuf)
 		sendto_one(cptr, ":%s MODE %s %s %s",
 			   me.name, chptr->chname, modebuf, parabuf);
 }
@@ -670,6 +678,12 @@ char	*parv[], *mbuf, *pbuf;
 			if (keychange)
 				break;
 			*parv = check_string(*parv);
+			{
+				u_char	*s;
+
+				for (s = (u_char *)*parv; *s; s++)
+					*s &= 0x7f;
+			}
 			if (MyClient(sptr) && opcnt >= MAXMODEPARAMS)
 				break;
 			if (!fm)
@@ -742,7 +756,7 @@ char	*parv[], *mbuf, *pbuf;
 			 * limit 'l' to only *1* change per mode command but
 			 * eat up others.
 			 */
-			if (limitset)
+			if (limitset || !ischop)
 			    {
 				if (whatt == MODE_ADD && --parc > 0)
 					parv++;
@@ -1232,8 +1246,8 @@ char	*parv[];
 			continue;
 		if (*name == '&' && !MyConnect(sptr))
 			continue;
-		if (*name == '0')
-			*jbuf = '\0';
+		if (*name == '0' && !atoi(name))
+			(void)strcpy(jbuf, "0");
 		else if (!IsChannelName(name))
 		    {
 			if (MyClient(sptr))

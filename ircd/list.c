@@ -37,7 +37,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)list.c	2.22 15 Oct 1993 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)list.c	2.24 4/20/94 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -245,7 +245,7 @@ Reg1	aClient	*cptr;
 	    }
 	if (cptr->next)
 		cptr->next->prev = cptr->prev;
-	if (cptr->user)
+	if (IsPerson(cptr) && cptr->user)
 	    {
 		add_history(cptr);
 		off_history(cptr);
@@ -365,6 +365,22 @@ aConfItem	*make_conf()
 	aconf->hold = 0;
 	Class(aconf) = 0;
 	return (aconf);
+}
+
+void	delist_conf(aconf)
+aConfItem	*aconf;
+{
+	if (aconf == conf)
+		conf = conf->next;
+	else
+	    {
+		aConfItem	*bconf;
+
+		for (bconf = conf; aconf != bconf->next; bconf = bconf->next)
+			;
+		bconf->next = aconf->next;
+	    }
+	aconf->next = NULL;
 }
 
 void	free_conf(aconf)
