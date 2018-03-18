@@ -25,7 +25,8 @@ struct Module
 {
     char	*name;			/* module name */
     char	*(*init)(AnInstance *);	/* instance initialization */
-    void	(*release)();		/* instance releasing */
+    void	(*release)(AnInstance *);/* instance releasing >UNUSED< */
+    void	(*stats)(AnInstance *);	/* send instance stats to ircd */
     int		(*start)(u_int);	/* start authentication */
     int		(*work)(u_int);		/* called whenever something has to be
 					 * done (incoming data, timeout..) */
@@ -36,9 +37,10 @@ struct Module
 struct Instance
 {
     AnInstance	*nexti;
-    aModule	*mod;
-    void	*opt;
-    char	*popt;
+    aModule	*mod;			/* module */
+    char	*opt;			/* options read from file */
+    char	*popt;			/* options to send to ircd */
+    void	*data;			/* private data: stats, ... */
     aTarget	*address;
     aTarget	*hostname;
 };

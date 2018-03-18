@@ -29,9 +29,12 @@ typedef	struct	SMode	Mode;
 typedef	struct	fdarray	FdAry;
 typedef	struct	CPing	aCPing;
 typedef	struct	Zdata	aZdata;
-#ifdef CACHED_MOTD
-typedef struct        MotdItem aMotd;
-typedef struct        MotdItem aExtCf;
+#if defined(CACHED_MOTD)
+typedef struct        LineItem aMotd;
+#endif
+#if defined(USE_IAUTH)
+typedef struct        LineItem aExtCf;
+typedef struct        LineItem aExtData;
 #endif
 
 #define	HOSTLEN		63	/* Length of hostname.  Updated to         */
@@ -329,13 +332,11 @@ struct Zdata {
 };
 #endif
 
-#ifdef CACHED_MOTD
-struct  MotdItem
+struct LineItem
 { 
     char    *line;
-    struct  MotdItem *next;
+    struct  LineItem *next;
 };
-#endif
 
 /*
  * Client structures
@@ -345,7 +346,7 @@ struct	User	{
 	Link	*invited;	/* chain of invite pointer blocks */
 	Link	*uwas;		/* chain of whowas pointer blocks */
 	char	*away;		/* pointer to away message */
-	time_t	last;
+	time_t	last;		/* "idle" time */
 	int	refcnt;		/* Number of times this block is referenced
 				** from aClient (field user), aServer (field
 				** by) and whowas array (field ww_user).
@@ -435,16 +436,13 @@ struct Client	{
 	long	receiveK;	/* Statistics: total k-bytes received */
 	u_short	sendB;		/* counters to count upto 1-k lots of bytes */
 	u_short	receiveB;	/* sent and received. */
-	time_t	lasttime;
+	time_t	lasttime;	/* last time we received data */
 	time_t	firsttime;	/* time client was created */
 	time_t	since;		/* last time we parsed something */
-	u_int	sact;		/* could conceivably grow large...*/
 	aClient	*acpt;		/* listening client which we accepted from */
 	Link	*confs;		/* Configuration record associated */
 	int	authfd;		/* fd for rfc931 authentication */
 	char	*auth;
-	int	priority;	/* priority for selection as active */
-	u_short	ract;		/* no fear about this. */
 	u_short	port;		/* and the remote port# too :-) */
 	struct	IN_ADDR	ip;	/* keep real ip# too */
 	struct	hostent	*hostp;

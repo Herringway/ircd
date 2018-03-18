@@ -1,5 +1,5 @@
-.\" @(#)$Id: iauth.conf.5,v 1.3 1998/09/21 18:30:39 kalt Exp $
-.TH IAUTH.CONF 5 "$Date: 1998/09/21 18:30:39 $"
+.\" @(#)$Id: iauth.conf.5,v 1.5 1999/01/13 02:32:40 kalt Exp $
+.TH IAUTH.CONF 5 "$Date: 1999/01/13 02:32:40 $"
 .SH NAME
 iauth.conf \- The Internet Relay Chat Authentication Configuration File
 .SH DESCRIPTION
@@ -37,18 +37,37 @@ When writing a configuration file, one should \fBalways\fP verify the
 syntax using the \fIiauth\fP program to avoid later problems.
 .SH MODULES
 .TP
+.B pipe
+This module is provided as a replacement to the (now obsolete) R
+configuration lines supported by the IRC daemon.  It runs an external
+program with the client IP and port as arguments.  The program should
+output either 'Y' (Yes, let the client in), or 'N' (No, don't let them
+in).
+
+Note that this module is quite expensive as it forks a separate process for
+each connection received by the IRC daemon.
+
+This module requires the following option:
+.B prog=/path/to/external/program
+.TP
 .B socks
 This module performs a basic check to verify that the host where the
-connection originated from doesn't run a proxy server on port 1080 that is
-open to the world.  It is useful to reject abusive clients using a relay to
-evade kill lines and bans.
+connection originated from doesn't run a SOCKS v4 proxy server on port 1080
+that is open to the world.  It is useful to reject abusive clients using a
+relay to evade kill lines and bans.
 
-This module takes two options:
+This module understands four options:
 .B reject
 to reject connections originating from a host where an open proxy
 was detected,
 .B log
 to log hostnames where an open proxy is detected.
+.B paranoid
+to consider proxies which deny the request because of a userid/ident
+mismatch to be OPEN proxies.
+.B cache[=value]
+to set the cache lifetime in minutes.  By default, caching is enabled for
+30 minutes.  A value of 0 disables caching.
 .TP
 .B rfc931
 This module is for authentication TCP connections using the protocol

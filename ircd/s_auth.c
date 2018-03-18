@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_auth.c,v 1.22 1998/12/13 00:18:30 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_auth.c,v 1.26 1999/02/01 20:35:50 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -27,9 +27,11 @@ static  char rcsid[] = "@(#)$Id: s_auth.c,v 1.22 1998/12/13 00:18:30 kalt Exp $"
 #include "s_externs.h"
 #undef S_AUTH_C
 
-aExtCf	*iauth_conf = NULL;
-
 #if defined(USE_IAUTH)
+
+aExtCf		*iauth_conf = NULL;
+aExtData	*iauth_stats = NULL;
+
 /*
  * sendto_iauth
  *
@@ -162,19 +164,55 @@ read_iauth()
 			    start = end;
 			    continue;
 			}
+		    if (*start == 's')
+			{
+			    aExtData *ectmp;
+
+			    while (ectmp = iauth_stats)
+				{
+				    iauth_stats = iauth_stats->next;
+				    MyFree(ectmp->line);
+				    MyFree(ectmp);
+				}
+			    iauth_stats = (aExtData *)
+				    MyMalloc(sizeof(aExtData));
+			    iauth_stats->line = MyMalloc(60);
+			    sprintf(iauth_stats->line,
+				    "iauth modules statistics (%s)",
+				    myctime(timeofday));
+			    iauth_stats->next = NULL;
+			    start = end;
+			    continue;
+			}
+		    if (*start == 'S')
+			{
+			    aExtData **ectmp = &iauth_stats;
+
+			    while (*ectmp)
+				    ectmp = &((*ectmp)->next);
+			    *ectmp = (aExtData *) MyMalloc(sizeof(aExtData));
+			    (*ectmp)->line = mystrdup(start+2);
+			    (*ectmp)->next = NULL;
+			    start = end;
+			    continue;
+			}
 		    if (*start != 'U' && *start != 'u' &&
 			*start != 'K' && *start != 'D')
 			{
 			    sendto_flag(SCH_AUTH, "Garbage from iauth [%s]",
 					start);
+			    sendto_iauth("-1 E Garbage [%s]", start);
 			    /*
 			    ** The above should never happen, but i've seen it
 			    ** occasionnally, so let's try to get more info
 			    ** about it! -kalt
 			    */
 			    sendto_flag(SCH_AUTH,
-			"last='%c' start=%x end=%x buf=%x olen=%d i=%d",
+				"last=%u start=%x end=%x buf=%x olen=%d i=%d",
 					last, start, end, buf, olen, i);
+			    sendto_iauth(
+			 "-1 E last=%u start=%x end=%x buf=%x olen=%d i=%d",
+			 		last, start, end, buf, olen, i);
 			    start = end;
 			    continue;
 			}
@@ -294,10 +332,32 @@ char *to;
 {
 	aExtCf *ectmp = iauth_conf;
 
+	if (adfd < 0)
+		return;
 	while (ectmp)
 	    {
 		sendto_one(sptr, ":%s %d %s :%s",
 			   ME, RPL_STATSIAUTH, to, ectmp->line);
+		ectmp = ectmp->next;
+	    }
+}
+
+/*
+ * report_iauth_stats
+ *
+ * called from m_stats(), this is the reply to /stats A
+ */
+void
+report_iauth_stats(sptr, to)
+aClient *sptr;
+char *to;
+{
+	aExtData *ectmp = iauth_stats;
+
+	while (ectmp)
+	    {
+		sendto_one(sptr, ":%s %d %s :%s",
+			   ME, RPL_STATSDEBUG, to, ectmp->line);
 		ectmp = ectmp->next;
 	    }
 }

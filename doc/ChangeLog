@@ -1,3 +1,96 @@
+1999-02-03  Christophe Kalt
+
+	* mod_rfc931.c/rfc931_work(): get rid of any \n in replies.
+	
+	* a_io.c/parse_ircd(): when receiving a "DNS timeout" message,
+	inform ircd if we're already done (otherwise, it keeps waiting
+	until timeout).
+
+	* s_bsd.c/completed_connection(): tell iauth not to wait for DNS
+	information for servers we connect to.
+
+	* s_auth.c/read_iauth():
+		* fixed "Garbage" notices to &AUTH.
+		* send E message to iauth when parsing garbage.
+
+1999-01-28  Christophe Kalt
+
+	* s_serv.c/m_server_estab(): added notices to &DEBUG.
+
+	* struct_def.h, s_auth.c: renamed MotdItem to LineItem and moved
+	around some defines.
+
+	* s_bsd_ext.h: added missing ';' for utmp_open() definition.
+
+	* channel.c/m_list(): !shortname now reports +p/+s channels (but
+	still hides member count and topic for +s channels).
+
+	* match.c/match(): rearranged if test to suppress harmless read
+	overflow errors (reported by Insure++).
+
+	* s_user.c/m_nick(): lp needs to be initialized (reported by Insure++).
+
+	* hash.c/hash_find_channels(): bugfix (spottoed by Q).
+
+	* mod_rfc931.c/rfc931_init(): fix for a silly bug (from Piotr).
+
+1999-01-19  Christophe Kalt
+
+	* resolv_def.h, res_comp.c, res_init.c: updated (BIND 4.9.7-REL).
+
+	* packet.c/dopacket(): don't call unzip_packet() without data at
+	beginning of connection only! (from Q).
+
+	* numeric_def.h, s_err.c, channel.c: added numerics RPL_UNIQOPIS
+	(325), ERR_BANLISTFULL (478) and ERR_UNIQOPPRIVSNEEDED (485).
+
+	* channel.c:
+		* m_njoin(): missing return value (reported by Insure++).
+		* m_mode(): use ERR_RESTRICTED for restricted clients.
+		* m_join(): it's now possible to create	!!#foo if #foo exists.
+		* m_list(): now works for !shortname.
+
+	* hash_ext.h, hash.c: added hash_find_channels().
+
+	* configure.in, os.h:
+		* update for autoconf 2.13.
+		* let's trust autoconf to decide to use poll() or not.
+
+	* s_bsd.c: sendto_flags() doesn't exist, it's sendto_flag().
+
+	* mod_rfc931.c:
+		* stats weren't initialized.
+		* added undocumented "protocol" option (it's boring!).
+
+	* mod_socks.c:
+		* fixed never occuring memory leak.
+		* improved stats (from Piotr Kucharski).
+	
+	* s_user_ext.h, s_user.c, s_service.c: added a parameter to
+	do_nick_name() [UID].
+
+1999-01-12  Christophe Kalt
+
+	* a_log_def.h, mod_pipe_ext.h, a_externs.h, mod_pipe.c, a_conf.c:
+	finally wrote the pipe module.
+
+	* struct_def.h, a_conf_def.h, a_io_ext.h, iauth.c, mod_rfc931.c,
+	mod_socks.c, s_auth.c, s_auth_ext.h, s_misc.c: iauth now sends
+	statistics to ircd, shown by /stats t.
+
+	* a_conf_def.h, a_conf.c, a_log_def.h, mod_socks.c: SOCKS module
+	overhaul: added caching, rewrote code to use v4 instead of v5, and
+	to be smarter (Based on work from Piotr Kucharski).
+	
+	* s_user.c: do_nick_name() now rejects "anonymous".
+
+	* packet.c/dopacket(): don't call unzip_packet() without data.
+
+	* channel.c: extension to del_modeid() from Kaspar Landsberg.
+
+	* s_bsd.c: don't call dopacket() again for compressed links just
+	because the output buffer was filled up.
+
 1998-12-24  Christophe Kalt
 
 	* s_service.c: using FLAGS_CBURST for services has too many

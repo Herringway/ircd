@@ -1,6 +1,6 @@
 /************************************************************************
- *   IRC - Internet Relay Chat, iauth/a_io_ext.h
- *   Copyright (C) 1998 Christophe Kalt
+ *   IRC - Internet Relay Chat, iauth/mod_pipe_ext.h
+ *   Copyright (C) 1999 Christophe Kalt
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -18,33 +18,11 @@
  */
 
 /*  This file contains external definitions for global variables and functions
-    defined in iauth/a_io.c.
+    defined in iauth/mod_pipe.c.
  */
 
 /*  External definitions for global variables.
  */
-#ifndef A_IO_C
-extern anAuthData      cldata[MAXCONNECTIONS];
-#endif /* A_IO_C */
-
-/*  External definitions for global functions.
- */
-#ifndef A_IO_C
-#define EXTERN extern
-#else /* A_IO_C */
-#define EXTERN
-#endif /* A_IO_C */
-
-EXTERN void io_init();
-#if ! USE_STDARG
-EXTERN void sendto_ircd();
-#else /* USE_STDARG */
-EXTERN void vsendto_ircd (char *, va_list);
-EXTERN void sendto_ircd (char *, ...);
-#endif
-EXTERN void init_io __P(());
-EXTERN void loop_io __P(());
-EXTERN int tcp_connect __P((char *, char *, u_short, char **));
-
-/* __P(()) */
-#undef EXTERN
+#ifndef MOD_PIPE_C
+extern aModule Module_pipe;
+#endif /* MOD_PIPE_C */

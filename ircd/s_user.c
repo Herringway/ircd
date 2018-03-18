@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_user.c,v 1.63 1998/12/21 21:05:33 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_user.c,v 1.66 1999/01/23 23:05:52 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -229,6 +229,8 @@ int	server, parc;
 **  anything outside the above set will terminate nickname.
 **  In addition, the first character cannot be '-'
 **  or a Digit.
+**  Finally forbid the use of "anonymous" because of possible
+**  abuses related to anonymous channnels. -kalt
 **
 **  Note:
 **	'~'-character should be allowed, but
@@ -236,12 +238,19 @@ int	server, parc;
 **	result if only few servers allowed it...
 */
 
-int	do_nick_name(nick)
+int	do_nick_name(nick, server)
 char	*nick;
+int	server;
 {
 	Reg	char	*ch;
 
-	if (*nick == '-' || isdigit(*nick)) /* first character in [0..9-] */
+	if (*nick == '-') /* first character '-' */
+		return 0;
+
+	if (isdigit(*nick) && !server) /* first character in [0..9] */
+		return 0;
+
+	if (!strcasecmp(nick, "anonymous"))
 		return 0;
 
 	for (ch = nick; *ch && (ch - nick) < NICKLEN; ch++)
@@ -686,7 +695,7 @@ char	*parv[];
 	aClient *acptr;
 	int	delayed = 0;
 	char	nick[NICKLEN+2], *s, *user, *host;
-	Link	*lp;
+	Link	*lp = NULL;
 
 	if (IsService(sptr))
    	    {
@@ -724,7 +733,7 @@ char	*parv[];
 	 * creation) then reject it. If from a server and we reject it,
 	 * and KILL it. -avalon 4/4/92
 	 */
-	if (do_nick_name(nick) == 0 ||
+	if (do_nick_name(nick, IsServer(cptr)) == 0 ||
 	    (IsServer(cptr) && strcmp(nick, parv[1])))
 	    {
 		sendto_one(sptr, err_str(ERR_ERRONEUSNICKNAME, parv[0]),

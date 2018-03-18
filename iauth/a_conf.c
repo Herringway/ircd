@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: a_conf.c,v 1.5 1998/09/07 21:53:42 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: a_conf.c,v 1.7 1999/01/13 02:32:41 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -28,7 +28,7 @@ static  char rcsid[] = "@(#)$Id: a_conf.c,v 1.5 1998/09/07 21:53:42 kalt Exp $";
 #undef A_CONF_C
 
 static aModule *Mlist[] =
-	{ &Module_rfc931, &Module_socks, (aModule *)NULL };
+	{ &Module_rfc931, &Module_socks, &Module_pipe, (aModule *)NULL };
 
 u_int	debuglevel = 0;
 
@@ -126,8 +126,9 @@ char *cfile;
 			    }
 			*last = (AnInstance *) malloc(sizeof(AnInstance));
 			(*last)->nexti = NULL;
-			(*last)->opt = NULL;
 			(*last)->mod = Mlist[i];
+			(*last)->opt = NULL;
+			(*last)->data = NULL;
 			(*last)->hostname = NULL;
 			(*last)->address = NULL;
 

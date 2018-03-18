@@ -35,7 +35,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.47 1998/12/24 16:29:17 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.52 1999/02/03 22:12:34 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -49,7 +49,7 @@ static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.47 1998/12/24 16:29:17 kalt Exp $";
 #endif
 
 aClient	*local[MAXCONNECTIONS];
-FdAry	fdas, fdaa, fdall;
+FdAry	fdas, fdall;
 int	highest_fd = 0, readcalls = 0, udpfd = -1, resfd = -1, adfd = -1;
 time_t	timeofday;
 static	struct	SOCKADDR_IN	mysk;
@@ -567,9 +567,8 @@ void	init_sys()
 #endif
 
 	bzero((char *)&fdas, sizeof(fdas));
-	bzero((char *)&fdaa, sizeof(fdaa));
 	bzero((char *)&fdall, sizeof(fdall));
-	fdas.highest = fdall.highest = fdaa.highest = -1;
+	fdas.highest = fdall.highest = -1;
 
 	for (fd = 3; fd < MAXCONNECTIONS; fd++)
 	    {
@@ -1066,7 +1065,16 @@ aClient	*cptr;
 	sendto_one(cptr, "SERVER %s 1 :%s",
 		   my_name_for_link(ME, aconf->port), me.info);
 	if (!IsDead(cptr))
+	    {
 		start_auth(cptr);
+#if defined(USE_IAUTH)
+		/*
+		** This could become a bug.. but I don't think iauth needs the
+		** hostname/aliases in this case. -kalt
+		*/
+		sendto_iauth("%d d", cptr->fd);
+#endif
+	    }
 
 	return (IsDead(cptr)) ? -1 : 0;
 }
@@ -1274,7 +1282,6 @@ aClient *cptr;
 					report_error("setsockopt(SO_LINGER) %s:%s",
 						     cptr);
 #endif
-			del_fd(i, &fdaa);
 		    }
 		del_fd(i, &fdall);
 		local[i] = NULL;
@@ -1307,8 +1314,6 @@ aClient *cptr;
 					del_fd(j, &fdas);
 					add_fd(i, &fdas);
 				    }
-				if (!del_fd(j, &fdaa))
-					add_fd(i, &fdaa);
 				while (!local[highest_fd])
 					highest_fd--;
 #if defined(USE_IAUTH)
@@ -1814,8 +1819,7 @@ int	msg_ready;
 			** all that was received.
 			*/
 			if (cptr->flags & FLAGS_ZIP)
-				while (cptr->zip->in->avail_in != 0 ||
-				       cptr->zip->in->avail_out == 0)
+				while (cptr->zip->in->avail_in != 0)
 				    {
 					done = dopacket(cptr, readbuf, 0);
 					if (done && done != 2)
@@ -2218,6 +2222,10 @@ FdAry	*fdp;
 deadsocket:
 				if (TST_READ_EVENT(fd))
 					CLR_READ_EVENT(fd);
+				if (cptr->exitc =! EXITC_UNDEF)
+					sendto_flag(SCH_DEBUG,
+						    "EXITC overwritten: %c",
+						    cptr->exitc);
 				cptr->exitc = EXITC_ERROR;
 				(void)exit_client(cptr, cptr, &me,
 						  strerror(get_sockerr(cptr)));

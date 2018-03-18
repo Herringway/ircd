@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: ircd.c,v 1.37 1998/12/13 00:02:35 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: ircd.c,v 1.41 1999/01/23 23:01:23 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -151,7 +151,7 @@ int s;
 	(void)sigaddset(&act.sa_mask, SIGINT);
 	(void)sigaction(SIGINT, &act, NULL);
 #else
-	(void)signal(SIGHUP, s_rehash);	/* sysV -argv */
+	(void)signal(SIGHUP, SIG_DFL);	/* sysV -argv */
 #endif
 	dorestart = 1;
 }
@@ -171,21 +171,6 @@ void	server_reboot()
 	*/
 #ifdef USE_SYSLOG
 	(void)closelog();
-#endif
-#if defined(USE_IAUTH)
-#if 0
-	if (adfd >= 0)
-	    {
-		/* if iauth is running, it'll become a zombie unless we wait
-		 * for it. (Of course, if the alarm rings, we haven't waited
-		 * long enough). -kalt
-		 */
-		close(adfd);
-		alarm(1);
-		wait(NULL);
-		alarm(0);
-	    }
-#endif
 #endif
 	for (i = 3; i < MAXCONNECTIONS; i++)
 		(void)close(i);
@@ -926,7 +911,8 @@ char	*argv[];
 
 	Debug((DEBUG_NOTICE,"Server ready..."));
 #ifdef USE_SYSLOG
-	syslog(LOG_NOTICE, "Server Ready");
+	syslog(LOG_NOTICE, "Server Ready: v%s (%s #%s)", version, creation,
+	       generation);
 #endif
 	timeofday = time(NULL);
 	while (1)
@@ -941,7 +927,7 @@ time_t	delay;
 	static	time_t	nextc = 0;
 #endif
 #ifdef HUB
-	static	time_t	nextactive = 0, lastl = 0;
+	static	time_t	lastl = 0;
 #endif
 
 	/*
@@ -993,32 +979,13 @@ time_t	delay;
 
 #if defined(PREFER_SERVER)
 	(void)read_message(1, &fdas);
-	flush_connections(me.fd);
 	Debug((DEBUG_DEBUG, "delay for %d", delay));
 	if (timeofday > nextc)
 	    {
 		(void)read_message(delay, &fdall);
 		nextc = timeofday;
 	    }
-/*
-	else
-	    {
-		if (timeofday > nextactive)
-		    {
-			(void)read_message(0, &fdaa);
-			nextactive = timeofday + HUB;
-		    }
-		(void)read_message(1, &fdas);
-	    }
-*/
 	timeofday = time(NULL);
-/*
-	if (timeofday > lastl)
-	    {
-		decay_activity();
-		lastl = timeofday;
-	    }
-*/
 #else
 	(void)read_message(delay, &fdall);
 	timeofday = time(NULL);
