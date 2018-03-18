@@ -28,8 +28,8 @@ IRCDMODE=4711
 INCLUDE=../include
 
 # For MIPS, use the following:
-# CFLAGS= -g -systype bsd43 -DSYSTYPE_BSD43 -I${INCLUDE}
-CFLAGS= -g -I${INCLUDE}
+# CFLAGS= -O -systype bsd43 -DSYSTYPE_BSD43 -I${INCLUDE}
+CFLAGS= -O -I${INCLUDE}
 #use the following on SUN OS without nameserver libraries inside libc
 ##NOTE: most dont have the resolver libraries inside libc
 #IRCDLIBS= -lresolv
@@ -47,7 +47,7 @@ OBJS=channel.o ircd.o list.o s_bsd.o s_conf.o s_msg.o s_numeric.o\
      whowas.o s_debug.o class.o hash.o note.o s_misc.o
 
 SRC=channel.c ircd.c list.c s_bsd.c s_conf.c s_msg.c s_numeric.c\
-     whowas.c s_debug.c class.c note.c hash.c s_misc.c
+     whowas.c s_debug.c class.c note.c hash.c s_misc.c authuser.c
 
 COMMONOBJS=../common/bsd.o ../common/dbuf.o \
            ../common/packet.o ../common/send.o\
@@ -70,13 +70,28 @@ build: ircd
 ircd: $(OBJS) $(COMMONOBJS) ../include/patchlevel.h
 	$(SHELL) version.c.SH
 	$(CC) $(CFLAGS) -c version.c
-	$(CC) -g $(OBJS) $(COMMONOBJS) version.o -o ircd $(IRCDLIBS)
+	$(CC) $(CFLAGS) $(OBJS) $(COMMONOBJS) version.o -o ircd $(IRCDLIBS)
+	chmod $(IRCDMODE) ircd
+
+auth: $(OBJS) $(COMMONOBJS) authuser.o ../include/patchlevel.h
+	$(SHELL) version.c.SH
+	$(CC) $(CFLAGS) -c version.c
+	$(CC) $(CFLAGS) $(OBJS) $(COMMONOBJS) authuser.o version.o \
+		-o ircd $(IRCDLIBS)
 	chmod $(IRCDMODE) ircd
 
 bindircd: $(RESOBJS) $(OBJS) $(COMMONOBJS) ../include/patchlevel.h
 	$(SHELL) version.c.SH
 	$(CC) $(CFLAGS) -c version.c
-	$(CC) -g $(RESOBJS) $(OBJS) $(COMMONOBJS) version.o -o ircd $(IRCDLIBS)
+	$(CC) $(CFLAGS) $(RESOBJS) $(OBJS) $(COMMONOBJS) version.o \
+		-o ircd $(IRCDLIBS)
+	chmod $(IRCDMODE) ircd
+
+authbind: $(OBJS) $(COMMONOBJS) $(RESOBJS) authuser.o ../include/patchlevel.h
+	$(SHELL) version.c.SH
+	$(CC) $(CFLAGS) -c version.c
+	$(CC) $(CFLAgS) $(OBJS) $(COMMONOBJS) $(RESOBJS) authuser.o version.o \
+		-o ircd $(IRCDLIBS)
 	chmod $(IRCDMODE) ircd
 
 saber: $(SRC)
@@ -121,6 +136,11 @@ saber: $(SRC)
 ../res/sethostent.o: ../res/sethostent.c ../include/resolv.h
 	(cd ../res; ${MAKE} build);
 
+hash.o: ../include/struct.h ../include/sys.h ../include/hash.h hash.c \
+	../include/config.h
+	@crypt/sums
+	  $(CC) $(CFLAGS) -c hash.c
+	@/bin/mv -f hash.c.old hash.c
 clean:
 	${RM} -f *.o *~ core ircd version.c #* *.bak
 
@@ -139,11 +159,11 @@ s_bsd.o: ../include/struct.h ../include/config.h ../include/dbuf.h
 s_bsd.o: ../include/sys.h
 s_conf.o: ../include/struct.h ../include/config.h ../include/numeric.h
 s_conf.o: ../include/dbuf.h ../include/sys.h
-note.o: ../include/struct.h ../include/numeric.h
+note.o: ../include/struct.h ../include/numeric.h ../include/config.h
 s_misc.o: ../include/struct.h ../include/config.h ../include/dbuf.h
 s_msg.o: ../include/struct.h ../include/config.h
 s_msg.o: ../include/dbuf.h ../include/sys.h channel.h
-s_msg.o: ../include/msg.h ../include/numeric.h
+s_msg.o: ../include/msg.h ../include/numeric.h ../include/authuser.h
 s_numeric.o: ../include/config.h ../include/sys.h
 s_numeric.o: ../include/struct.h
 s_numeric.o: ../include/dbuf.h ../include/numeric.h
@@ -159,3 +179,4 @@ res_debug.o: ../include/resolv.h ../include/nameser.h
 res_query.o: ../include/resolv.h ../include/nameser.h
 res_mkquery.o: ../include/resolv.h ../include/nameser.h
 res_send.o: ../include/resolv.h ../include/nameser.h
+authuser.o: ../include/authuser.h

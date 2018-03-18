@@ -24,10 +24,11 @@
 #undef	ULTRIX			/* Vax Ultrix. */
 #undef	AIX			/* IBM ugly so-called Unix, AIX */
 #undef	MIPS			/* MIPS Unix */
+#undef	SGI			/* SGI Irix */
+#undef	SYSV			/* SYSV stuff - being worked on where poss. */
 
 /* Do these work? I dunno... */
 
-#undef	SYSV			/* Does not work yet. Under construction */
 #undef	VMS			/* Should work for IRC client, not server */
 #undef	MAIL50			/* If you're running VMS 5.0 */
 #undef	PCS			/* PCS Cadmus MUNIX, use with BSD flag! */
@@ -69,7 +70,26 @@
  */
 #undef	VALLOC			/* Define this if you have valloc(3) */
 
-#define	HAVE_RELIABLE_SIGNALS
+/*
+ * The following is fairly system dependent and is important that you
+ * get it right. Use *ONE* of these as your #define and *ONE ONLY*
+ *
+ * define this if your signal() calls DONT get reset back to the default
+ * action when a signal is trapped. BSD signals are by reliable.
+ */
+#define	BSD_RELIABLE_SIGNALS
+
+/*
+ * if you are on a sysv-ish system, your signals arent reliable.
+ */
+#undef	SYSV_UNRELIABLE_SIGNALS
+
+/*
+ * define POSIX_SIGNALS if your system has the POSIX signal library.
+ * POSIX_SIGNALS are RELIABLE. NOTE: these may *NOT* be used automatically
+ * by your system when you compile so define here to make sure.
+ */
+#undef	POSIX_SIGNALS
 
 #ifdef APOLLO
 #define	RESTARTING_SYSTEMCALLS
@@ -134,6 +154,23 @@
  */
 #define	SHOW_INVISIBLE_LUSERS
 
+/* NO_DEFAULT_INVISIBLE
+ *
+ * When defined, your users will not automatically be attributed with user
+ * mode "i" (i == invisible). Invisibility means people dont showup in
+ * WHO or NAMES unless they are on the same channel as you.
+ */
+#undef	NO_DEFAULT_INVISIBLE
+
+/* OPER_KILL
+ *
+ * If you dont believe operators should be allowed to use the /KILL command
+ * or believe it is uncessary for them to use it, then leave OPER_KILL
+ * undefined. This will not affect other operators or servers issuing KILL
+ * commands however.
+ */
+#undef	OPER_KILL
+
 /* MAXIMUM LINKS
  *
  * This define is useful for leaf nodes and gateways. It keeps you from
@@ -163,6 +200,14 @@
  */
 
 #define MAXIMUM_LINKS 1
+
+/*
+ * If your server is running as a a HUB Server then define this.
+ * A HUB Server has many servers connect to it at the same as opposed
+ * to a leaf which just has 1 server (typically the uplink). Define this
+ * correctly for performance reasons.
+ */
+#undef	HUB
 
 /* R_LINES:  The conf file now allows the existence of R lines, or
  * restrict lines.  These allow more freedom in the ability to restrict
@@ -229,6 +274,12 @@
 #undef	SYSLOG_OPER	/* log all users who successfully become an Op */
 
 /*
+ * If you want to log to a different facility than DAEMON, change
+ * this define.
+ */
+#define LOG_FACILITY LOG_DAEMON
+
+/*
  * If you want your server to be paranoid about IP# lookup, define GETHOST
  * so that a gethostbyname() is done for each gethostbyaddr() which returns
  * a hostname. If your system already has paranoid calls (SunOS 4.1.1 or
@@ -241,7 +292,7 @@
  * define this if you want to use crypted passwords for operators in your
  * ircd.conf file. See ircd/crypt/README for more details on this.
  */
-#undef	CRYPT_OPER_PASSWORD
+#define	CRYPT_OPER_PASSWORD
 
 /*
  * define this if you enable summon and if you want summon to look for the
@@ -276,12 +327,49 @@
 #define USE_OUR_CTYPE
 
 /*
+ * DNS.
+ *
+ * It is *very* important that if you are running an IRC server that the
+ * DNS (Domain Name Service) libraries work properly and that it be correctly
+ * setup on your host. However, on many hosts, its run with improper
+ * configurations. A simple test is to run the "hostname" command at any
+ * shell prompt. If it returns your FULL hostname (ie has your domainname in
+ * it) then it should be working and setup correctly. If not, then you *MUST*
+ * #define the following. If while running your server, you get clients which
+ * connect as just "host" with no ".local.domain" then you should also define
+ * this. There is nothing wrong with defining it just to be safe except that
+ * some operating systems may have compile time errors.
+ */
+#define	BAD_DNS
+
+/*
  * use these to setup a Unix domain socket to connect clients/servers to.
  */
 #undef	UNIXPORT
-#ifdef	UNIXPORT
-#define	UNIXPORTPATH	"/tmp/.ircd"
-#endif
+
+/*
+ * define IDENT to use the RFC931 identification server to verify usernames
+ * note that you also need to edit ircd/Makefile to link (or not link) in
+ * the authuser library code.
+ *
+ * AUTHTIMEOUT is the number of seconds to time out a connection that neither
+ * accepts or refuses.  3s is good.  Most sites will either accept within a
+ * short time frame, or refuse immediately.
+ *
+ * RFC931 servers are available on ftp.lysator.liu.se (for Suns, HPs, some
+ * others -- pidentd-1.7 is the most recent version as of 920519) and also
+ * ftp.uu.net (networking/authd/rfc931-authd.3.01.shar.Z -- this is far more
+ * portable than pidentd, but slower)
+ *
+ * #defining IDENT adds an additional measure of security by making it harder
+ * to spoof usernames with hacked clients and/or telnet-to-the-port.
+ *
+ * I recommend defining IDENT and leaving AUTHTIMEOUT at 3.  -ckd@eff.org
+ */
+#undef	IDENT
+#ifdef	IDENT
+#define	AUTHTIMEOUT 3
+#endif /* IDENT */
 
 /*   STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP STOP  */
 
@@ -319,15 +407,6 @@
  *	 ignore these recommendations- they only are meant to serve as a guide
  */
 #define NICKNAMEHISTORYLENGTH 500
-
-/*
- * WALLOPS : When enabled this will send a broadcast message out to anybody
- *           who is listening. Generally this is operators and eager users.
- *           Disabling (undefining WALLOPS) prevents users from annoying
- *           operators and other users who wish to listen for them. This is
- *           the prefered action.
- */
-#undef	WALLOPS	 		 /* Define this if you want user wallops */
 
 /*
  * Time interval to wait and if no messages have been received, then check for
@@ -376,8 +455,6 @@
  * Max number of channels a user is allowed to join.
  */
 #define MAXCHANNELSPERUSER  10	/* Recommended value: 10 */
-
-#undef	WALL /* Define this if you want walls */
 
 /*
  * SendQ-Always causes the server to put all outbound data into the sendq and
@@ -429,6 +506,28 @@
 #ifdef sequent                   /* Dynix (sequent OS) */
 #define SEQ_NOFILE    128        /* set to your current kernel impl, */
 #endif                           /* max number of socket connections */
+
+#ifdef	BSD_RELIABLE_SIGNALS
+#if defined(SYSV_UNRELIABLE_SIGNALS) || defined(POSIX_SIGNALS)
+error You stuffed up config.h signals #defines use only one.
+#endif
+#define	HAVE_RELIABLE_SIGNALS
+#endif
+
+#ifdef	SYSYV_UNRELIABLE_SIGNALS
+#ifdef	POSIX_SIGNALS
+error You stuffed up config.h signals #defines use only one.
+#endif
+#undef	HAVE_RELIABLE_SIGNALS
+#endif
+
+#ifdef POSIX_SIGNALS
+#define	HAVE_RELIABLE_SIGNALS
+#endif
+
+#ifndef	HUB
+#define	MAXIMUM_LINKS	1
+#endif
 
 #ifdef HAVECURSES
 # define DOCURSES

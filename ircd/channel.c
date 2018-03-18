@@ -104,14 +104,36 @@ int	*chasing;
 	return who;
     }
 
+static	char	*check_string(s)
+register	char *s;
+{
+	static	char	star[2] = "*";
+	char	*str = s;
+
+	if (BadPtr(s))
+		return star;
+
+	for ( ;*s; s++)
+		if (isspace(*s))
+		    {
+			*s = '\0';
+			break;
+		    }
+
+	return (BadPtr(str)) ? star : str;
+}
+
 static	char *make_nick_user_host(nick, name, host)
 char	*nick, *name, *host;
 {
-	static	char	star[2] = "*";
+	Reg1	char	*s;
 
 	bzero(namebuf, sizeof(namebuf));
-	sprintf(namebuf, "%.9s!%.10s@%.50s", BadPtr(nick) ? star : nick,
-		     BadPtr(name) ? star : name, BadPtr(host) ? star : host);
+	nick = check_string(nick);
+	name = check_string(name);
+	host = check_string(host);
+	sprintf(namebuf, "%.9s!%.10s@%.50s", nick, name, host);
+
 	return (namebuf);
 }
 
@@ -436,10 +458,7 @@ char	*parv[];
 
 	chanop = is_chan_op(sptr, chptr);
 
-	if (parc > 2)
-		mcount = set_mode(sptr, chptr, parc - 2, parv + 2,
-				  modebuf, parabuf);
-	else if (parc < 3)
+	if (parc < 3 || (!chanop && MyClient(sptr)))
 	    {
 		*modebuf = *parabuf = '\0';
 		modebuf[1] = '\0';
@@ -449,6 +468,8 @@ char	*parv[];
 		chptr->chname, modebuf, parabuf);
 		return 0;
 	    }
+	mcount = set_mode(sptr, chptr, parc - 2, parv + 2,
+			  modebuf, parabuf);
 
 	if (strlen(modebuf) > 1)
 	    {
@@ -463,6 +484,9 @@ char	*parv[];
 		if ((IsServer(cptr) && !IsServer(sptr) && !chanop) ||
 		    mcount == -1)
 			sendto_ops("Hack: %s MODE %s %s %s",
+				   parv[0], parv[1], modebuf, parabuf);
+		if (MyConnect(sptr) && (!chanop || mcount == -1))
+			sendto_one(sptr, "Hack: %s MODE %s %s %s",
 				   parv[0], parv[1], modebuf, parabuf);
 		sendto_serv_butone(sptr, ":%s MODE %s %s %s", parv[0],
 				   chptr->chname, modebuf, parabuf);
@@ -522,7 +546,7 @@ char	*parabuf;
 	who = find_chasing(cptr, parv[0], &chasing);
 	if (who) {
 	  if (IsMember(who, chptr)) {
-	    if (chasing) {
+	    if (chasing && ischop) {
 	      /*
 	      ** If this server noticed the nick change, the information
 	      ** must be propagated back upstream.
@@ -975,7 +999,7 @@ char *parv[];
 			chptr = link->value.chptr;
 			sendto_channel_butserv(chptr, sptr, PartFmt,
 						parv[0], chptr->chname);
-			sendto_serv_butone(chptr, PartFmt,
+			sendto_serv_butone(cptr, PartFmt,
 					   parv[0], chptr->chname);
 			remove_user_from_channel(sptr, chptr);
 		      }
@@ -993,8 +1017,7 @@ char *parv[];
 		** local client is first to enter prviously nonexistant
 		** channel so make them (rightfully) the Channel Operator.
 		*/
-		if (!ChannelExists(parv[1]))
-		    flags = FLAG_CHANOP;
+		flags = (ChannelExists(parv[1])) ? 0 : FLAG_CHANOP;
 
 		if (list_length(sptr->user->channel) >= MAXCHANNELSPERUSER)
 		  {
@@ -1424,7 +1447,7 @@ char	*parv[];
 		else if (SecretChannel(chptr))
 			*buf = '@';
 		idx = strlen(buf);
-		flag = 0;
+		flag = 1;
 		for (link = chptr->members; link; link = link->next)
 		    {
 			c2ptr = link->value.cptr;

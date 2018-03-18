@@ -40,7 +40,10 @@
 #define FALSE (0)
 #define TRUE  (!FALSE)
 
-#if defined(MIPS) || defined(pyr) || defined(apollo)
+/*
+ * Real BSD systems dont have a malloc.h. - avalon
+ */
+#if defined(BSD) || defined(MIPS) || defined(pyr) || defined(apollo)
 char *malloc(), *calloc();
 void free();
 #else
@@ -49,8 +52,10 @@ void free();
 
 extern	int	matches PROTO((char *, char *)), mycmp PROTO((char *, char *));
 
-#ifdef NEED_STRTOKEN
+#ifdef NEED_STRTOK
 extern	char	*strtok PROTO((char *, char *));
+#endif
+#ifdef NEED_STRTOKEN
 extern	char	*strtoken PROTO((char **, char *, char *));
 #endif
 #ifdef NEED_INET_ADDR

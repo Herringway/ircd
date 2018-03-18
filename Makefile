@@ -17,7 +17,9 @@
 #*   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #*/
 
-CC=cc 
+# choose your poison
+CC=cc
+#CC=gcc -traditional
 RM=/bin/rm
 INCLUDEDIR=../include
 
@@ -26,7 +28,9 @@ INCLUDEDIR=../include
 # on NEXT use:
 # CFLAGS=-bsd -I$(INCLUDEDIR)
 #otherwise this:
-CFLAGS= -I$(INCLUDEDIR) -g
+CFLAGS= -I$(INCLUDEDIR) -O
+# with GCC 2.1, you can use this instead
+#CFLAGS= -I$(INCLUDEDIR) -O
 
 #on NeXT other than 2.0:
 # IRCDLIBS=-lsys_s
@@ -50,7 +54,8 @@ IRCDMODE = 4711
 MAKE = make 'CFLAGS=${CFLAGS}' 'CC=${CC}' 'IRCDLIBS=${IRCDLIBS}'\
 	'IRCDMODE=${IRCDMODE}'
 SHELL=/bin/sh
-SUBDIRS=common ircd irc
+# don't make the client by default, it's broken anyway
+SUBDIRS=common ircd # irc
 
 all:	build
 
@@ -61,7 +66,7 @@ server:
 	@echo 'Making server'; cd ircd; ${MAKE} build; cd ..;
 
 client:
-	@echo 'Makign client'; cd irc; ${MAKE} build; cd ..;
+	@echo 'Making client'; cd irc; ${MAKE} build; cd ..;
 
 build:
 	@for i in $(SUBDIRS); do \
@@ -69,6 +74,28 @@ build:
 		cd $$i;\
 		${MAKE} build; cd ..;\
 	done
+
+auth:
+	echo "Building common";\
+	cd common;\
+	${MAKE} build;\
+	cd ../ircd;\
+	${MAKE} auth;\
+	cd ..;
+
+bindircd:
+	echo "Building common";\
+	cd common;\
+	${MAKE} build;\
+	cd ../ircd;\
+	${MAKE} bindircd;\
+
+authbind:
+	echo "Building common";\
+	cd common;\
+	${MAKE} build;\
+	cd ../ircd;\
+	${MAKE} authbind;\
 
 clean:
 	${RM} -f *~ #* core
