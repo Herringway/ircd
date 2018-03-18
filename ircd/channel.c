@@ -49,6 +49,7 @@ char channel_id[] = "channel.c v2.0 (c) 1990 University of Oulu, Computing Cente
 #include "sys.h"
 #include "common.h"
 #include "numeric.h"
+#include "whowas.h"
 #include "channel.h"
 
 aChannel *channel = NullChn;
@@ -59,19 +60,6 @@ extern aClient *find_person(), me;
 extern aChannel *hash_find_channel();
 static void sub1_from_channel();
 static int SetMode();
-
-static void InitBufs(cptr, chptr, buf1, buf2)
-aClient *cptr;
-aChannel *chptr;
-char *buf1, *buf2;
-{
-  if (IsChanOp(cptr, chptr) && IsMember(cptr, chptr) ||
-      IsServer(cptr) || !MyConnect(cptr)) {
-    *buf1 = *buf2 == '\0';
-  } else {
-    exit(0);
-  }
-}
 
 static Link *FindLink(link, ptr)
 Link *link;
@@ -96,6 +84,35 @@ aClient *user;
   }
   return count;
 }
+
+/*
+** find_chasing
+**	Find the client structure for a nick name (user) using history
+**	mechanism if necessary. If the client is not found, an error
+**	message (NO SUCH NICK) is generated. If the client was found
+**	through the history, chasing will be 1 and otherwise 0.
+*/
+static aClient *find_chasing(sptr, user, chasing)
+aClient *sptr;
+char *user;
+int *chasing;
+    {
+	aClient *who = find_person(user, (aClient *) 0);
+
+	if (chasing != NULL)
+		*chasing = 0;
+	if (who)
+		return who;
+	if (!(who = GetHistory(user, (long)KILLCHASETIMELIMIT)))
+	    {
+		sendto_one(sptr, ":%s %d %s %s :No such nick (channel)",
+			   me.name, ERR_NOSUCHNICK, sptr->name, user);
+		return NULL;
+	    }
+	if (chasing != NULL)
+		*chasing = 1;
+	return who;
+    }
 
 static void AddUserToChannel(chptr, who, flags)
 aChannel *chptr;
@@ -296,6 +313,7 @@ char *parabuf;
   int whatt = MODE_ADD;
   int limitset = 0;
   int nusers, i = 0;
+  int chasing = 0;
   Link *addops = (Link *) 0, *delops = (Link *) 0, *tmplink;
   aClient *who;
   static char flags[] = { MODE_PRIVATE, 'p', MODE_SECRET, 's',
@@ -306,7 +324,7 @@ char *parabuf;
   if (parc < 1) {
     return -1;
   }
-  InitBufs(cptr, chptr, parabuf, modebuf);
+  *parabuf = *modebuf = '\0';
   while (curr && *curr && i < MODEBUFLEN - 1) {
     switch (*curr) {
     case '+':
@@ -319,9 +337,28 @@ char *parabuf;
       parc--;
       if (parc > 0) {
 	parv++;
-	who = find_person(parv[0], (aClient *) 0);
+	who = find_chasing(cptr, parv[0], &chasing);
 	if (who) {
 	  if (IsMember(who, chptr)) {
+	    if (chasing) {
+	      /*
+	      ** If this server noticed the nick change, the information
+	      ** must be propagated back upstream.
+	      ** This is a bit early, but at most this will generate
+	      ** just some extra messages if nick appeared more than
+	      ** once in the MODE message... --msa
+	      **
+	      ** WARNING: I do hope that there is no error in thinking such
+	      ** that two servers get into loop sending correction MODE
+	      ** messages between each other for ever... :-( --msa
+	      */
+	      sendto_one(cptr,
+			 ":%s MODE %s %s %s", me.name, chptr->chname,
+			 whatt == MODE_ADD ? "+o" : "-o", who->name);
+	      /* Temporary notice to local ops --msa */
+	      sendto_ops("MODE %s %s %s chased to %s", chptr->chname,
+			 whatt == MODE_ADD ? "+o" : "-o", parv[0], who->name);
+	    }
 	    if (whatt == MODE_ADD) {
 	      tmplink = (Link *) malloc(sizeof(Link));
 	      if (!tmplink)
@@ -377,12 +414,10 @@ char *parabuf;
       }
       if (tmp[0]) {
 	if (whatt == MODE_ADD) {
-	  if (deleted | tmp[0])
-	    deleted &= ~tmp[0];
+	  deleted &= ~tmp[0];
 	  added |= tmp[0];
 	} else {
-	  if (added | tmp[0])
-	    added &= ~tmp[0];
+	  added &= ~tmp[0];
 	  deleted |= tmp[0];
 	}
       } else {
@@ -647,7 +682,8 @@ char *parv[];
 
 	if (atoi(parv[1]) == 0 && parv[1][0] != '+' && parv[1][0] != '#') {
 	  if (parv[1][0] == '0' && sptr->user->channel) {
-	    sendto_serv_butone(cptr, ":%s CHANNEL 0", parv[0]);
+	    sendto_serv_butone(cptr, ":%s PART %s", parv[0],
+				sptr->user->channel->chname);
 	    sendto_channel_butserv(sptr->user->channel,
 				   ":%s PART %s", parv[0],
 				   sptr->user->channel->chname);
@@ -684,14 +720,16 @@ char *parv[];
 	if (parv[1][0] == '#')
 	  sendto_serv_butone(cptr, ":%s JOIN %s", parv[0], chptr->chname);
 	else {
-	  sendto_serv_butone(cptr, ":%s CHANNEL %s", parv[0],
-			     chptr->chname);
 	  if (sptr->user->channel) {
+	    sendto_serv_butone(cptr, ":%s PART %s", parv[0],
+				sptr->user->channel->chname);
 	    sendto_channel_butserv(sptr->user->channel,
 				   ":%s PART %s", parv[0],
 				   sptr->user->channel->chname);
 	    RemoveUserFromChannel(sptr, sptr->user->channel);
 	  }
+	  sendto_serv_butone(cptr, ":%s JOIN %s", parv[0],
+			     chptr->chname);
 	  sptr->user->channel = chptr;
 	}
 	DelInvite(sptr);
@@ -754,20 +792,14 @@ char *parv[];
 	  return 0;
 	}
 	if (!IsMember(sptr, chptr)) {
-	  sendto_one(sptr, ":%s %d %s %s %s :You're not on channel",
-		     me.name, ERR_NOTONCHANNEL, parv[0], parv[1],
-		     chptr->chname);
+	  sendto_one(sptr, ":%s %d %s %s :You're not on channel",
+		     me.name, ERR_NOTONCHANNEL, parv[0], parv[1]);
 	  return 0;
 	}
 	/*
 	**  Remove user from the old channel (if any)
 	*/
-	if (parv[1][0] == '#') {
-	  sendto_serv_butone(cptr, ":%s PART %s", parv[0], chptr->chname);
-	} else {
-	  sendto_serv_butone(cptr, ":%s CHANNEL 0", parv[0],
-			     chptr->chname);
-	}
+	sendto_serv_butone(cptr, ":%s PART %s", parv[0], chptr->chname);
 	sendto_channel_butserv(chptr, ":%s PART %s", parv[0],
 			       chptr->chname);
 	RemoveUserFromChannel(sptr, chptr);
@@ -783,47 +815,81 @@ m_kick(cptr, sptr, parc, parv)
 aClient *cptr, *sptr;
 int parc;
 char *parv[];
-{
-  aClient *who;
-  aChannel *chptr;
-  CheckRegisteredUser(sptr);
-
-  if (parc < 3 || *parv[1] == '\0')
     {
-      sendto_one(sptr,
-		 "NOTICE %s :%s", parv[0],
-		 "*** Who do you want to kick off from which channel?");
-      return 0;
+	aClient *who;
+	aChannel *chptr;
+	int chasing = 0;
+	CheckRegistered(sptr);
+
+	if (parc < 3 || *parv[1] == '\0')
+	    {
+		sendto_one(sptr,
+			   "NOTICE %s :%s", parv[0],
+		       "*** Who do you want to kick off from which channel?");
+		return 0;
+	    }
+	chptr = get_channel(sptr, parv[1], !CREATE);
+	if (!chptr)
+	    {
+		sendto_one(sptr, ":%s %d %s :You haven't joined that channel",
+			   me.name, ERR_USERNOTINCHANNEL, parv[0]);
+		return 0;
+	    }
+	if (!IsChanOp(sptr, chptr))
+	    {
+		sendto_one(sptr, ":%s %d %s %s :You're not channel operator",
+			   me.name, ERR_CHANOPRIVSNEEDED, parv[0],
+			   chptr->chname);
+		return 0;
+	    }
+	if (!(who = find_chasing(sptr, parv[2], &chasing)))
+		return 0; /* No such user left! */
+	if (chasing)
+	    {
+		sendto_one(sptr,":%s NOTICE %s :KICK changed from %s to %s",
+			   me.name, parv[0], parv[2], who->name);
+		/* Temporary notice to local ops, remove later... --msa */
+		sendto_ops("KICK from %s changed from %s to %s",
+		     parv[0], parv[2], who->name);
+	    }
+	if (IsMember(who, chptr))
+	    {
+		sendto_channel_butserv(chptr, ":%s KICK %s %s", parv[0],
+				       chptr->chname, who->name);
+		sendto_serv_butone(cptr, ":%s KICK %s %s", parv[0],
+				   chptr->chname, who->name);
+		/*
+		** If we are chasing, the KICK must be sent to all servers
+		** Unfortunately this doesn't work, because a server cannot
+		** issue KICK, and we can't pass KICK upstream with the
+		** original prefix. As this KICK race condition is used to
+		** acquire chanop, try to do the second best thing: take off
+		** chanop from the kicked.
+		*/
+		if (chasing)
+		    {
+			/*
+			** Send the kick anyway, just in case servers are
+			** allowed KICK
+			*/
+			sendto_one(cptr, ":%s KICK %s %s", me.name,
+				   chptr->chname, who->name);
+			/*
+			** Send the mode change, this is just temporary!
+			** Once MODE and KICK are fixed to track nick name
+			** changes in all servers, this is not needed. --msa
+			*/
+			sendto_one(cptr, ":%s MODE %s -o %s", me.name,
+				   chptr->chname, who->name);
+		    }
+		RemoveUserFromChannel(who, chptr);
+	    }
+	else
+		sendto_one(sptr, ":%s %d %s %s %s :isn't on your channel !",
+			   me.name, ERR_NOTONCHANNEL, parv[0], who->name,
+			   chptr->chname);
+	return (0);
     }
-  chptr = get_channel(sptr, parv[1], !CREATE);
-  if (!chptr) {
-    sendto_one(sptr, ":%s %d %s :You haven't joined that channel",
-	       me.name, ERR_USERNOTINCHANNEL, parv[0]);
-    return 0;
-  }
-  who = find_person(parv[2], (aClient *) 0);
-  if (!who) {
-    if (MyClient(sptr))
-      sendto_one(sptr,
-		 ":%s %d %s %s %s :%s", me.name,
-		 ERR_NOTONCHANNEL, parv[0], parv[2], chptr->chname,
-		 "Cannot kick user off channel");
-    return 0;
-  }
-  if (IsMember(who, chptr) && IsChanOp(sptr, chptr)) {
-    sendto_channel_butserv(chptr, ":%s KICK %s %s", parv[0],
-			   chptr->chname, who->name);
-    sendto_serv_butone(cptr, ":%s KICK %s %s", parv[0],
-		       chptr->chname, who->name);
-    RemoveUserFromChannel(who, chptr);
-  } else if (!IsChanOp(sptr, chptr)) {
-    sendto_one(sptr, ":%s %d %s %s :You're not channel operator",
-	       me.name, ERR_CHANOPRIVSNEEDED, parv[0], chptr->chname);
-  } else
-    sendto_one(sptr, ":%s %d %s %s %s :isn't on your channel !",
-	       me.name, ERR_NOTONCHANNEL, parv[0], who->name, chptr->chname);
-  return (0);
-}
 
 int	count_channels(sptr)
 aClient	*sptr;
@@ -840,3 +906,211 @@ aClient	*sptr;
 			count++;
 	return (count);
 }
+
+/*
+** m_topic
+**	parv[0] = sender prefix
+**	parv[1] = topic text
+*/
+m_topic(cptr, sptr, parc, parv)
+aClient *cptr, *sptr;
+int parc;
+char *parv[];
+    {
+	aChannel *chptr = NullChn;
+	char *topic = (char *)NULL;
+	
+	CheckRegisteredUser(sptr);
+
+	if (parc > 1 &&
+	    (atoi(parv[1]) || *parv[1] == '+' || *parv[1] == '#')) {
+	  if (!(chptr = find_channel(parv[1], NullChn))) {
+	      chptr = sptr->user->channel;
+	      topic = parv[1];
+	  }
+	  if (!chptr || !IsMember(sptr, chptr)) {
+	      sendto_one(sptr,":%s %d %s %s :Not On Channel",
+			 me.name, ERR_NOTONCHANNEL, parv[0], parv[1]);
+	      return 0;
+	  }
+	  if (parc > 2)
+	    topic = parv[2];
+	}
+	else {
+	  chptr = sptr->user->channel;
+	  topic = parv[1];	/* will be NULL or points to string. */
+	}
+
+	if (!chptr)
+	    {
+		sendto_one(sptr, ":%s %d %s :Bad Craziness",
+			   me.name, RPL_NOTOPIC, parv[0]);
+		return 0;
+	    }
+	
+	if (!topic)  /* only asking  for topic  */
+	    {
+		if (chptr->topic[0] == '\0')
+			sendto_one(sptr, ":%s %d %s %s :No topic is set.", 
+				   me.name, RPL_NOTOPIC, parv[0],
+				   chptr->chname);
+		else
+			sendto_one(sptr, ":%s %d %s %s :%s",
+				   me.name, RPL_TOPIC, parv[0],
+				   chptr->chname, chptr->topic);
+	    } 
+	else if (((chptr->mode.mode & MODE_TOPICLIMIT) == 0 ||
+		  IsChanOp(sptr, chptr)) && topic)
+	    {
+		/* setting a topic */
+		strncpyzt(chptr->topic, topic, sizeof(chptr->topic));
+		if (*chptr->chname != '#')
+			sendto_serv_butone(cptr,":%s TOPIC :%s",
+					   parv[0], chptr->topic);
+		if (parc <= 2)
+			sendto_channel_butserv(chptr, ":%s TOPIC :%s",
+					       parv[0],
+					       chptr->topic);
+		else
+			sendto_channel_butserv(chptr, ":%s TOPIC %s :%s",
+					       parv[0],
+					       chptr->chname, chptr->topic);
+	    }
+	else
+	    {
+	      sendto_one(sptr, ":%s %d %s %s :Cannot set topic, %s",
+			 me.name, ERR_CHANOPRIVSNEEDED, parv[0],
+			 chptr->chname, "not channel OPER");
+	    }
+	return 0;
+    }
+
+/*
+** m_invite
+**	parv[0] - sender prefix
+**	parv[1] - user to invite
+**	parv[2] - channel number
+*/
+m_invite(cptr, sptr, parc, parv)
+aClient *cptr, *sptr;
+int parc;
+char *parv[];
+    {
+	aClient *acptr;
+	aChannel *chptr;
+
+	CheckRegisteredUser(sptr);
+	if (parc < 2 || *parv[1] == '\0')
+	    {
+		sendto_one(sptr,":%s %d %s :Not enough parameters", me.name,
+			   ERR_NEEDMOREPARAMS, parv[0]);
+		return -1;
+	    }
+	
+	if (parc < 3 || (parv[2][0] == '*' && parv[2][1] == '\0')) {
+	  chptr = sptr->user->channel;
+	  if (!chptr) {
+	    sendto_one(sptr, ":%s %d %s :You have not joined any channel",
+		       me.name, ERR_USERNOTINCHANNEL, parv[0]);
+	    return -1;
+	  }
+	} else 
+	  chptr = find_channel(parv[2], NullChn);
+
+	if (chptr && !IsMember(sptr, chptr)) {
+	  sendto_one(sptr, ":%s %d %s %s :You're not on channel %s",
+		     me.name, ERR_NOTONCHANNEL, parv[0], chptr->chname,
+		     chptr->chname);
+	  return -1;
+	}
+
+	if (chptr && (chptr->mode.mode & MODE_INVITEONLY)) {
+	  if (!IsChanOp(sptr, chptr)) {
+	    sendto_one(sptr, ":%s %d %s %s :You're not channel operator",
+		       me.name, ERR_CHANOPRIVSNEEDED, parv[0],
+		       chptr->chname);
+	    return -1;
+	  } else if (!IsMember(sptr, chptr)) {
+	    sendto_one(sptr, ":%s %d %s %s :Channel is invite-only.",
+		       me.name, ERR_CHANOPRIVSNEEDED, parv[0],
+		       ((chptr) ? (chptr->chname) : parv[2]));
+	    return -1;
+	  }
+	}
+
+	acptr = find_person(parv[1],(aClient *)NULL);
+	if (acptr == NULL)
+	    {
+		sendto_one(sptr,":%s %d %s %s :No such nickname",
+			   me.name, ERR_NOSUCHNICK, parv[0], parv[1]);
+		return 0;
+	    }
+	if (MyConnect(sptr))
+	    {
+		sendto_one(sptr,":%s %d %s %s %s", me.name,
+			   RPL_INVITING, parv[0], acptr->name,
+			   ((chptr) ? (chptr->chname) : parv[2]));
+		/* 'find_person' does not guarantee 'acptr->user' --msa */
+		if (acptr->user && acptr->user->away)
+			sendto_one(sptr,":%s %d %s %s :%s", me.name,
+				   RPL_AWAY, parv[0], acptr->name,
+				   acptr->user->away);
+	    }
+	if (MyConnect(acptr))
+	  if (chptr && (chptr->mode.mode & MODE_INVITEONLY) &&
+	      sptr->user && (IsMember(sptr, chptr)) && IsChanOp(sptr, chptr))
+	    AddInvite(acptr, chptr);
+	sendto_one(acptr,":%s INVITE %s %s",parv[0],
+		   acptr->name, ((chptr) ? (chptr->chname) : parv[2]));
+	return 0;
+    }
+
+/*
+ * sends opers in groups of 3 (where possible) on net breaks.
+ */
+void send_channel_ops(cptr, chptr)
+aClient *cptr;
+aChannel *chptr;
+    {
+	Reg1 Link *addops;
+	char modebuf[MODEBUFLEN], parabuf[MODEBUFLEN];
+	char *cp;
+	int count, send;
+
+	cp = modebuf;
+	send = count = 0;
+	*cp = '\0';
+	*cp++ = '+';
+	*parabuf = '\0';
+	for (addops = chptr->members; addops; addops = addops->next)
+	    {
+		if (!IsChanOp((aClient *)addops->value, chptr))
+			continue;
+		if (strlen(parabuf) +
+		strlen(((aClient *)(addops->value))->name) + 10 <
+		    MODEBUFLEN)
+		    {
+			*cp++ = 'o';
+			strcat(parabuf, ((aClient *)(addops->value))->name);
+			strcat(parabuf, " ");
+			count++;
+		    }
+		else if (*modebuf && *parabuf)
+			send = 1;
+		if (count == 3)
+			send = 1;
+		if (send)
+		    {
+			sendto_one(cptr, ":%s MODE %s %s %s",
+				   me.name, chptr->chname, modebuf, parabuf);
+			send = count = 0;
+			cp = modebuf;
+			*parabuf = '\0';
+			*cp = '\0';
+			*cp++ = '+';
+		    }
+	    }
+	if (*parabuf)
+		sendto_one(cptr, ":%s MODE %s %s %s",
+			   me.name, chptr->chname, modebuf, parabuf);
+    }
