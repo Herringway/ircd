@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.53 1999/01/28 23:50:17 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.65 1999/07/02 16:49:37 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -209,6 +209,42 @@ char	*parv[];
 		sendto_one(sptr, err_str(ERR_NOPRIVILEGES, parv[0]));
 		return 1;
 	    }
+	if (!MyConnect(acptr) && (cptr != acptr->from))
+	    {
+		/*
+		** The following is an awful kludge, but I don't see any other
+		** way to change the pre 2.10.3 behaviour.  I'm probably going
+		** to regret it.. -kalt
+		*/
+		if ((acptr->from->serv->version & SV_OLDSQUIT) == 0)
+		    {
+			/* better server: just propagate upstream */
+			sendto_one(acptr->from, ":%s SQUIT %s :%s", parv[0],
+				   acptr->name, comment);
+			sendto_flag(SCH_SERVER,
+				    "Forwarding SQUIT %s from %s (%s)",
+				    acptr->name, parv[0], comment);
+			sendto_flag(SCH_DEBUG,
+				    "Forwarding SQUIT %s to %s from %s (%s)",
+				    acptr->name, acptr->from->name, 
+				    parv[0], comment);
+			return 1;
+		    }
+		/*
+		** ack, bad server encountered!
+		** must send back to other good servers which were trying to
+		** do the right thing, and fake the yet to come SQUIT which
+		** will never be received from the bad servers.
+		*/
+		if (IsServer(cptr) && 
+		    (cptr->serv->version & SV_OLDSQUIT) == 0)
+		    {
+			sendto_one(cptr, ":%s SQUIT %s :%s (Bounced for %s)",
+				   ME, acptr->name, comment, parv[0]);
+			sendto_flag(SCH_DEBUG, "Bouncing SQUIT %s back to %s",
+				    acptr->name, acptr->from->name);
+		    }
+	    }
 	/*
 	**  Notify all opers, if my local link is remotely squitted
 	*/
@@ -236,6 +272,13 @@ char	*parv[];
 	sendto_flag(SCH_SERVER, "Received SQUIT %s from %s (%s)",
 		    acptr->name, parv[0], comment);
 
+	if (MyConnect(acptr) && 
+	    IsServer(cptr) && (cptr->serv->version & SV_OLDSQUIT) == 0)
+	    {
+		sendto_one(cptr, ":%s SQUIT %s :%s", ME, acptr->name, comment);
+		sendto_flag(SCH_DEBUG, "Issuing additionnal SQUIT %s for %s",
+			    acptr->name, acptr->from->name);
+	    }
 	return exit_client(cptr, acptr, sptr, comment);
     }
 
@@ -274,26 +317,17 @@ aClient	*cptr;
 	else
 		id = "";
 
-	if (!strncmp(cptr->info, "021", 3) ||
-	    !strncmp(cptr->info, "020999", 6))
+	if (!strncmp(cptr->info, "021", 3))
 		cptr->hopcount = SV_29|SV_NJOIN|SV_NMODE|SV_NCHAN; /* SV_2_10*/
 	else if (!strncmp(cptr->info, "0209", 4))
-	    {
-		cptr->hopcount = SV_29;	/* 2.9+ protocol */
-		if (!(cptr->info[4] == '0' &&
-		      (cptr->info[5] == '0' || cptr->info[5] == '1' ||
-		       cptr->info[5] == '2' || cptr->info[5] == '3' ||
-		       cptr->info[5] == '4' ||
-		       (cptr->info[5] == '5' && cptr->info[6] == '0' &&
-			cptr->info[7] == '0'))))
-			/*
-			** the NJOIN command appeared on 2.9.5
-			** Unfortunately, m_njoin() has a fatal bug in 2.9.5
-			*/
-			cptr->hopcount |= SV_NJOIN;
-	    }
+		cptr->hopcount = SV_29|SV_OLDSQUIT;	/* 2.9+ protocol */
 	else
 		cptr->hopcount = SV_OLD; /* uhuh */
+
+	if (!strcmp("IRC", id) && !strncmp(cptr->info, "02100", 5) &&
+	    atoi(cptr->info+5) < 20600)
+		/* before 2.10.3a6 ( 2.10.3a5 is just broken ) */
+		cptr->hopcount |= SV_OLDSQUIT;
 
 	/* Check version number/mask from conf */
 	sprintf(buf, "%s/%s", id, cptr->info);
@@ -838,8 +872,6 @@ Reg	aClient	*cptr;
 #endif
 	sendto_flag(SCH_SERVER, "Sending SERVER %s (%d %s)", cptr->name,
 		    1, cptr->info);
-	sendto_flag(SCH_DEBUG, "Burst to %s: %X%s", inpath,
-		    cptr->hopcount, (cptr->flags & FLAGS_ZIP) ? "z" : "");
 	/*
 	** Old sendto_serv_but_one() call removed because we now
 	** need to send different names to different servers
@@ -902,9 +934,6 @@ Reg	aClient	*cptr;
 				   acptr->hopcount+1, stok, acptr->info);
 	    }
 
-	sendto_flag(SCH_DEBUG, "SERVER phase complete: %u",
-		    (int)DBufLength(&cptr->sendQ));
-
 	for (acptr = &me; acptr; acptr = acptr->prev)
 	    {
 		/* acptr->from == acptr for acptr == cptr */
@@ -917,12 +946,6 @@ Reg	aClient	*cptr;
 			** These are only true when *BOTH* NICK and USER have
 			** been received. -avalon
 			*/
-			if (acptr->user->servp->userlist == NULL)
-				sendto_flag(SCH_ERROR,
-			    "ERROR: USER:%s without SERVER:%s(%d) (to %s)",
-					    acptr->name, acptr->user->server,
-					    acptr->user->servp->tok,
-					    cptr->name);
 			if (*mlname == '*' &&
 			    match(mlname, acptr->user->server) == 0)
 				stok = me.serv->tok;
@@ -953,8 +976,7 @@ Reg	aClient	*cptr;
 		/* the previous if does NOT catch all services.. ! */
 	    }
 
-	sendto_flag(SCH_DEBUG, "client phase complete: %u",
-		    (int)DBufLength(&cptr->sendQ));
+	flush_connections(cptr->fd);
 
 	/*
 	** Last, pass all channels modes
@@ -970,9 +992,6 @@ Reg	aClient	*cptr;
 				send_channel_modes(cptr, chptr);
 			    }
 	    }
-
-	sendto_flag(SCH_DEBUG, "NJOIN/mode phase complete: %u",
-		    (int)DBufLength(&cptr->sendQ));
 
 	cptr->flags &= ~FLAGS_CBURST;
 #ifdef	ZIP_LINKS
@@ -1093,8 +1112,6 @@ char	*parv[];
 
 	if (parc > 2)
 	    {
-		int	qlen = strlen(parv[2]);
-
 		if (IsServer(cptr) && check_link(cptr) && !IsOper(sptr))
 		    {
 			sendto_one(sptr, rpl_str(RPL_TRYAGAIN, parv[0]),
@@ -1286,7 +1303,8 @@ int	mask;
 	int	*p, port;
 	char	c, *host, *pass, *name;
 	
-	for (tmp = conf; tmp; tmp = tmp->next)
+	for (tmp = (mask & (CONF_KILL|CONF_OTHERKILL)) ? kconf : conf;
+	     tmp; tmp = tmp->next)
 		if (tmp->status & mask)
 		    {
 			for (p = &report_array[0][0]; *p; p += 3)
@@ -1980,7 +1998,8 @@ aClient	*cptr, *sptr;
 int	parc;
 char	*parv[];
 {
-	sendto_one(sptr, rpl_str(RPL_REHASHING, parv[0]), configfile);
+	sendto_one(sptr, rpl_str(RPL_REHASHING, parv[0]),
+		   mybasename(configfile));
 	sendto_flag(SCH_NOTICE,
 		    "%s is rehashing Server config file", parv[0]);
 #ifdef USE_SYSLOG
@@ -2269,7 +2288,7 @@ char	*parv[];
 	 * 3 seconds. -avalon (curtesy of wumpus)
 	 */
 	(void)alarm(3);
-	fd = open(MPATH, O_RDONLY);
+	fd = open(IRCDMOTD_PATH, O_RDONLY);
 	(void)alarm(0);
 	if (fd == -1)
 	    {

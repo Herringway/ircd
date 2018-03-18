@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: ircd.c,v 1.41 1999/01/23 23:01:23 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: ircd.c,v 1.62 1999/08/13 17:17:42 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -31,29 +31,28 @@ static  char rcsid[] = "@(#)$Id: ircd.c,v 1.41 1999/01/23 23:01:23 kalt Exp $";
 aClient me;			/* That's me */
 aClient *client = &me;		/* Pointer to beginning of Client list */
 
-static	void	open_debugfile(), setup_signals();
+static	void	open_debugfile(), setup_signals(), io_loop();
 
 istat_t	istat;
 char	**myargv;
 int	rehashed = 0;
 int	portnum = -1;		    /* Server port number, listening this */
-char	*configfile = CONFIGFILE;	/* Server configuration file */
+char	*configfile = IRCDCONF_PATH;	/* Server configuration file */
 int	debuglevel = -1;		/* Server debug level */
 int	bootopt = BOOT_PROT|BOOT_STRICTPROT;	/* Server boot option flags */
 char	*debugmode = "";		/*  -"-    -"-   -"-   -"- */
 char	*sbrk0;				/* initial sbrk(0) */
-char	*tunefile = TPATH;
+char	*tunefile = IRCDTUNE_PATH;
 static	int	dorehash = 0,
 		dorestart = 0,
 		restart_iauth = 0;
-
-static	char	*dpath = DPATH;
 
 time_t	nextconnect = 1;	/* time for next try_connections call */
 time_t	nextgarbage = 1;        /* time for next collect_channel_garbage call*/
 time_t	nextping = 1;		/* same as above for check_pings() */
 time_t	nextdnscheck = 0;	/* next time to poll dns to force timeouts */
-time_t	nextexpire = 1;	/* next expire run on the dns cache */
+time_t	nextexpire = 1;		/* next expire run on the dns cache */
+time_t	nextiarestart = 1;	/* next time to check if iauth is alive */
 
 #ifdef	PROFIL
 extern	etext();
@@ -132,10 +131,10 @@ char	*mesg;
 {
 #ifdef	USE_SYSLOG
 	(void)syslog(LOG_WARNING, "Restarting Server because: %s (%u)", mesg,
-		     (u_int)sbrk((size_t)0)-(u_int)sbrk0);
+		     (u_int)((char *)sbrk((size_t)0)-sbrk0));
 #endif
 	sendto_flag(SCH_NOTICE, "Restarting server because: %s (%u)", mesg,
-		    (u_int)sbrk((size_t)0)-(u_int)sbrk0);
+		    (u_int)((char *)sbrk((size_t)0)-sbrk0));
 	server_reboot();
 }
 
@@ -161,7 +160,7 @@ void	server_reboot()
 	Reg	int	i;
 
 	sendto_flag(SCH_NOTICE, "Aieeeee!!!  Restarting server... (%u)",
-		    (u_int)sbrk((size_t)0)-(u_int)sbrk0);
+		    (u_int)((char *)sbrk((size_t)0)-sbrk0));
 
 	Debug((DEBUG_NOTICE,"Restarting server..."));
 	flush_connections(me.fd);
@@ -182,12 +181,12 @@ void	server_reboot()
 	ircd_writetune(tunefile);
 	if (!(bootopt & (BOOT_INETD|BOOT_OPER)))
 	    {
-		(void)execv(SPATH, myargv);
+		(void)execv(IRCD_PATH, myargv);
 #ifdef USE_SYSLOG
 		/* Have to reopen since it has been closed above */
 		
 		openlog(myargv[0], LOG_PID|LOG_NDELAY, LOG_FACILITY);
-		syslog(LOG_CRIT, "execv(%s,%s) failed: %m\n", SPATH,
+		syslog(LOG_CRIT, "execv(%s,%s) failed: %m\n", IRCD_PATH,
 		       myargv[0]);
 		closelog();
 #endif
@@ -373,7 +372,7 @@ time_t	currenttime;
 			    }
 		    }
 		ping = IsRegistered(cptr) ? get_client_ping(cptr) :
-					    CONNECTTIMEOUT;
+					    ACCEPTTIMEOUT;
 		Debug((DEBUG_DEBUG, "c(%s) %d p %d k %d r %d a %d",
 			cptr->name, cptr->status, ping, kflag, rflag,
 			currenttime - cptr->lasttime));
@@ -416,18 +415,43 @@ time_t	currenttime;
 					cptr->count = 0;
 					*cptr->buffer = '\0';
 				    }
-				Debug((DEBUG_NOTICE, "DNS/AUTH timeout %s",
-					get_client_name(cptr,TRUE)));
+				Debug((DEBUG_NOTICE, "%s/%c%s timeout %s",
+				       (DoingDNS(cptr)) ? "DNS" : "dns",
+				       (DoingXAuth(cptr)) ? "X" : "x",
+				       (DoingAuth(cptr)) ? "AUTH" : "auth",
+				       get_client_name(cptr,TRUE)));
 				del_queries((char *)cptr);
 				ClearAuth(cptr);
 #if defined(USE_IAUTH)
 				if (DoingDNS(cptr) || DoingXAuth(cptr))
+				    {
+					if (DoingDNS(cptr) &&
+					    (iauth_options & XOPT_EXTWAIT))
+					    {
+						/* iauth wants more time */
+						sendto_iauth("%d d", cptr->fd);
+						ClearDNS(cptr);
+						cptr->lasttime = currenttime;
+						continue;
+					    }
+					if (DoingXAuth(cptr) &&
+					    (iauth_options & XOPT_NOTIMEOUT))
+					    {
+						cptr->exitc = EXITC_AUTHTOUT;
+						sendto_iauth("%d T", cptr->fd);
+						ereject_user(cptr, " Timeout ",
+						     "Authentication Timeout");
+						continue;
+					    }
 					sendto_iauth("%d T", cptr->fd);
+					SetDoneXAuth(cptr);
+				    }
 #endif
 				ClearDNS(cptr);
 				ClearXAuth(cptr);
-				SetAccess(cptr);
+				ClearWXAuth(cptr);
 				cptr->firsttime = currenttime;
+				cptr->lasttime = currenttime;
 				continue;
 			    }
 			if (IsServer(cptr) || IsConnecting(cptr) ||
@@ -515,6 +539,29 @@ aClient	*mp;
 	strncpyzt(mp->username, (p) ? p->pw_name : "unknown",
 		  sizeof(mp->username));
 	(void)get_my_name(mp, mp->sockhost, sizeof(mp->sockhost)-1);
+
+	/* Setup hostp - fake record to resolve localhost. -Toor */
+	mp->hostp = (struct hostent *)MyMalloc(sizeof(struct hostent));
+	mp->hostp->h_name = MyMalloc(strlen(me.sockhost)+1);
+	strcpy(mp->hostp->h_name, mp->sockhost);
+	mp->hostp->h_aliases = (char **)MyMalloc(sizeof(char *));
+	*mp->hostp->h_aliases = NULL;
+	mp->hostp->h_addrtype = AFINET;
+	mp->hostp->h_length = 
+#ifdef	INET6
+				IN6ADDRSZ;
+#else
+				sizeof(long);
+#endif
+	mp->hostp->h_addr_list = (char **)MyMalloc(2*sizeof(char *));
+#ifdef	INET6
+	mp->hostp->h_addr_list[0] = (char *)&in6addr_loopback;
+#else
+	mp->hostp->h_addr_list[0] = (void *)MyMalloc(mp->hostp->h_length);
+	*(long *)(mp->hostp->h_addr_list[0]) = IN_LOOPBACKNET;
+#endif
+	mp->hostp->h_addr_list[1] = NULL ;
+
 	if (mp->name[0] == '\0')
 		strncpyzt(mp->name, mp->sockhost, sizeof(mp->name));
 	if (me.info == DefInfo)
@@ -534,7 +581,6 @@ aClient	*mp;
 	mp->serv->snum = find_server_num (ME);
 	(void) make_user(mp);
 	istat.is_users++;	/* here, cptr->next is NULL, see make_user() */
-	usrtop = mp->user;
 	mp->user->flags |= FLAGS_OPER;
 	mp->serv->up = mp->name;
 	mp->user->server = find_server_string(mp->serv->snum);
@@ -555,7 +601,7 @@ aClient	*mp;
 static	int	bad_command()
 {
   (void)printf(
-	 "Usage: ircd [-a] [-b] [-c] [-d path]%s [-h servername] [-q] [-o] [-i] [-T tunefile] [-p (strict|on|off)] [-v] %s\n",
+	 "Usage: ircd [-a] [-b] [-c]%s [-h servername] [-q] [-o] [-i] [-T tunefile] [-p (strict|on|off)] [-s] [-v] %s\n",
 #ifdef CMDLINE_CONFIG
 	 " [-f config]",
 #else
@@ -576,7 +622,6 @@ int	argc;
 char	*argv[];
 {
 	uid_t	uid, euid;
-	time_t	delay = 0;
 
 	(void) myctime(time(NULL));	/* Don't ask, just *don't* ask */
 	sbrk0 = (char *)sbrk((size_t)0);
@@ -589,18 +634,12 @@ char	*argv[];
 #endif
 
 #ifdef	CHROOTDIR
-	if (chdir(dpath))
-	    {
-		perror("chdir");
-		(void)fprintf(stderr, "%s: Error in daemon path: %s.\n",
-			      SPATH, dpath);
-		exit(-1);
-	    }
 	ircd_res_init();
-	if (chroot(DPATH))
+	if (chroot(ROOT_PATH))
 	    {
 		perror("chroot");
-		(void)fprintf(stderr,"%s: Cannot chroot: %s.\n", SPATH, DPATH);
+		(void)fprintf(stderr,"%s: Cannot chroot: %s.\n", IRCD_PATH,
+			      ROOT_PATH);
 		exit(5);
 	    }
 #endif /*CHROOTDIR*/
@@ -662,10 +701,6 @@ char	*argv[];
 		    case 'q':
 			bootopt |= BOOT_QUICK;
 			break;
-		    case 'd' :
-                        (void)setuid((uid_t)uid);
-			dpath = p;
-			break;
 		    case 'o': /* Per user local daemon... */
                         (void)setuid((uid_t)uid);
 			bootopt |= BOOT_OPER;
@@ -707,13 +742,14 @@ char	*argv[];
 			tunefile = p;
 			break;
 		    case 'v':
-			(void)printf("ircd %s %s\n\tzlib %s\n\tircd_dir: %s \n\t%s #%s\n", version, serveropts,
+			(void)printf("ircd %s %s\n\tzlib %s\n\t%s #%s\n",
+				     version, serveropts,
 #ifndef	ZIP_LINKS
 				     "not used",
 #else
 				     zlib_version,
 #endif
-				     dpath, creation, generation);
+				     creation, generation);
 			  exit(0);
 		    case 'x':
 #ifdef	DEBUGMODE
@@ -733,44 +769,17 @@ char	*argv[];
 		    }
 	    }
 
-#ifndef	CHROOTDIR
-	if (chdir(dpath))
+	if (argc > 0)
+		bad_command(); /* This exits out */
+
+#if defined(USE_IAUTH) && defined(__CYGWIN32__)
+	if ((bootopt & BOOT_NOIAUTH) == 0)
 	    {
-		perror("chdir");
-		(void)fprintf(stderr, "%s: Error in daemon path: %s.\n",
-                              SPATH, dpath);
-		exit(-1);
+		bootopt |= BOOT_NOIAUTH;
+		(void)fprintf(stderr, "WARNING: Assuming -s option.\n");
 	    }
 #endif
-#if defined(USE_IAUTH)
-	if ((bootopt & BOOT_NOIAUTH) == 0)
-		switch (vfork())
-		    {
-		case -1:
-			fprintf(stderr, "%s: Unable to fork!", myargv[0]);
-			exit(-1);
-		case 0:
-			close(0); close(1); close(3);
-			if (execl(APATH, APATH, "-X", NULL) < 0)
-				_exit(-1);
-		default:
-		    {
-			int rc;
-			
-			(void)wait(&rc);
-			if (rc != 0)
-			    {
-				fprintf(stderr,
-					"%s: error: unable to find \"%s\".\n",
-					myargv[0], APATH);
-				exit(-1);
-			    }
-		    }
-		    }
-#endif
-
-	setup_signals();
-
+	
 #ifndef IRC_UID
 	if ((uid != euid) && !euid)
 	    {
@@ -796,6 +805,35 @@ char	*argv[];
 # endif
 #endif /*CHROOTDIR/UID/GID*/
 
+#if defined(USE_IAUTH)
+	if ((bootopt & BOOT_NOIAUTH) == 0)
+		switch (vfork())
+		    {
+		case -1:
+			fprintf(stderr, "%s: Unable to fork!", myargv[0]);
+			exit(-1);
+		case 0:
+			close(0); close(1); close(3);
+			if (execl(IAUTH_PATH, IAUTH, "-X", NULL) < 0)
+				_exit(-1);
+		default:
+		    {
+			int rc;
+			
+			(void)wait(&rc);
+			if (rc != 0)
+			    {
+				fprintf(stderr,
+					"%s: error: unable to find \"%s\".\n",
+					myargv[0], IAUTH_PATH);
+				exit(-1);
+			    }
+		    }
+		    }
+#endif
+
+	setup_signals();
+
 	/* didn't set debuglevel */
 	/* but asked for debugging output to tty */
 	if ((debuglevel < 0) &&  (bootopt & BOOT_TTY))
@@ -805,15 +843,12 @@ char	*argv[];
 		exit(-1);
 	    }
 
-	if (argc > 0)
-		bad_command(); /* This exits out */
-
 	initstats();
 	ircd_readtune(tunefile);
 	timeofday = time(NULL);
 #ifdef	CACHED_MOTD
 	motd = NULL;
-	read_motd(MPATH);
+	read_motd(IRCDMOTD_PATH);
 #endif
 	inithashtables();
 	initlists();
@@ -840,7 +875,7 @@ char	*argv[];
 	    }
 	else
 	    {
-		aClient *acptr;
+		aClient *acptr = NULL;
 		int i;
 
                 for (i = 0; i <= highest_fd; i++)
@@ -916,19 +951,14 @@ char	*argv[];
 #endif
 	timeofday = time(NULL);
 	while (1)
-		delay = io_loop(delay);
+		io_loop();
 }
 
 
-time_t	io_loop(delay)
-time_t	delay;
+void	io_loop()
 {
-#ifdef PREFER_SERVER
-	static	time_t	nextc = 0;
-#endif
-#ifdef HUB
-	static	time_t	lastl = 0;
-#endif
+	static	time_t	delay = 0;
+	int maxs = 4;
 
 	/*
 	** We only want to connect if a connection is due,
@@ -977,19 +1007,32 @@ time_t	delay;
 	else
 		delay = MIN(delay, TIMESEC);
 
-#if defined(PREFER_SERVER)
-	(void)read_message(1, &fdas);
+	/*
+	** First, try to drain traffic from servers (this includes listening
+	** ports).  Give up, either if there's no traffic, or too many
+	** iterations.
+	*/
+	while (maxs--)
+		if (read_message(0, &fdas, 0))
+			flush_fdary(&fdas);
+		else
+			break;
+
 	Debug((DEBUG_DEBUG, "delay for %d", delay));
-	if (timeofday > nextc)
+	/*
+	** Second, deal with _all_ clients but only try to empty sendQ's for
+	** servers.  Other clients are dealt with below..
+	*/
+	if (read_message(1, &fdall, 1) == 0 && delay > 1)
 	    {
-		(void)read_message(delay, &fdall);
-		nextc = timeofday;
+		/*
+		** Timed out (e.g. *NO* traffic at all).
+		** Try again but also check to empty sendQ's for all clients.
+		*/
+		sendto_flag(SCH_DEBUG, "read_message(RO) -> 0 [%d]", delay);
+		(void)read_message(delay - 1, &fdall, 0);
 	    }
 	timeofday = time(NULL);
-#else
-	(void)read_message(delay, &fdall);
-	timeofday = time(NULL);
-#endif
 
 	Debug((DEBUG_DEBUG ,"Got message(s)"));
 	/*
@@ -1014,10 +1057,11 @@ time_t	delay;
 		(void)rehash(&me, &me, 1);
 		dorehash = 0;
 	    }
-	if (restart_iauth)
+	if (restart_iauth || timeofday >= nextiarestart)
 	    {
-		start_iauth(1);
+		start_iauth(restart_iauth);
 		restart_iauth = 0;
+		nextiarestart = timeofday + 15;
 	    }
 	/*
 	** Flush output buffers on all connections now if they
@@ -1025,18 +1069,18 @@ time_t	delay;
 	** -avalon
 	*/
 	flush_connections(me.fd);
+
 #ifdef	DEBUGMODE
 	checklists();
 #endif
 
-	return delay;
 }
 
 /*
  * open_debugfile
  *
  * If the -t option is not given on the command line when the server is
- * started, all debugging output is sent to the file set by LPATH in config.h
+ * started, all debugging output is sent to the file set by IRCDDBG_PATH.
  * Here we just open that file and make sure it is opened to fd 2 so that
  * any fprintf's to stderr also goto the logfile.  If the debuglevel is not
  * set from the command line by -x, use /dev/null as the dummy logfile as long
@@ -1063,8 +1107,8 @@ static	void	open_debugfile()
 			isatty(2), (u_int)ttyname(2));
 		if (!(bootopt & BOOT_TTY)) /* leave debugging output on fd 2 */
 		    {
-			(void)truncate(LOGFILE, 0);
-			if ((fd = open(LOGFILE, O_WRONLY | O_CREAT, 0600)) < 0) 
+			(void)truncate(IRCDDBG_PATH, 0);
+			if ((fd = open(IRCDDBG_PATH,O_WRONLY|O_CREAT,0600))<0)
 				if ((fd = open("/dev/null", O_WRONLY)) < 0)
 					exit(-1);
 			if (fd != 2)
@@ -1072,7 +1116,7 @@ static	void	open_debugfile()
 				(void)dup2(fd, 2);
 				(void)close(fd); 
 			    }
-			strncpyzt(cptr->name, LOGFILE, sizeof(cptr->name));
+			strncpyzt(cptr->name, IRCDDBG_PATH,sizeof(cptr->name));
 		    }
 		else if (isatty(2) && ttyname(2))
 			strncpyzt(cptr->name, ttyname(2), sizeof(cptr->name));
@@ -1180,14 +1224,15 @@ char *filename;
 		if (write(fd, buf, strlen(buf)) == -1)
 			sendto_flag(SCH_ERROR,
 				    "Failed (%d) to write tune file: %s.",
-				    errno, filename);
+				    errno, mybasename(filename));
 		else
-			sendto_flag(SCH_NOTICE, "Updated %s.", filename);
+			sendto_flag(SCH_NOTICE, "Updated %s.",
+				    mybasename(filename));
 		close(fd);
 	    }
 	else
 		sendto_flag(SCH_ERROR, "Failed (%d) to open tune file: %s.",
-			    errno, filename);
+			    errno, mybasename(filename));
 }
 
 /*

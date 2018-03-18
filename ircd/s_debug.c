@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_debug.c,v 1.24 1998/12/13 00:02:37 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_debug.c,v 1.28 1999/07/11 22:11:17 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -33,9 +33,6 @@ static  char rcsid[] = "@(#)$Id: s_debug.c,v 1.24 1998/12/13 00:02:37 kalt Exp $
  * spaces are not allowed.
  */
 char	serveropts[] = {
-#ifdef	SENDQ_ALWAYS
-'A',
-#endif
 #ifndef	NO_IDENT
 'a',
 #endif
@@ -154,7 +151,7 @@ char	serveropts[] = {
 '\0'};
 
 #ifdef DEBUGMODE
-static	char	debugbuf[1024];
+static	char	debugbuf[2*READBUF_SIZE]; /* needs to be big.. */
 
 #if ! USE_STDARG
 void	debug(level, form, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
@@ -253,10 +250,12 @@ char	*nick;
 		   me.name, RPL_STATSDEBUG, nick, secs/60, secs%60,
 		   rus.ru_utime.tv_sec/60, rus.ru_utime.tv_sec%60,
 		   rus.ru_stime.tv_sec/60, rus.ru_stime.tv_sec%60);
-	sendto_one(cptr, ":%s %d %s :RSS %d ShMem %d Data %d Stack %d",
-		   me.name, RPL_STATSDEBUG, nick, rus.ru_maxrss,
-		   rus.ru_ixrss / (rup * hzz), rus.ru_idrss / (rup * hzz),
-		   rus.ru_isrss / (rup * hzz));
+	if (rup && hzz)
+		sendto_one(cptr, ":%s %d %s :RSS %d ShMem %d Data %d Stack %d",
+			   me.name, RPL_STATSDEBUG, nick, rus.ru_maxrss,
+			   rus.ru_ixrss / (rup * hzz),
+			   rus.ru_idrss / (rup * hzz),
+			   rus.ru_isrss / (rup * hzz));
 	sendto_one(cptr, ":%s %d %s :Swaps %d Reclaims %d Faults %d",
 		   me.name, RPL_STATSDEBUG, nick, rus.ru_nswap,
 		   rus.ru_minflt, rus.ru_majflt);
@@ -324,24 +323,19 @@ void	send_defines(cptr, nick)
 aClient *cptr;
 char	*nick;
 {
-    	sendto_one(cptr, ":%s %d %s :HUB:%s P_S:%d MS:%d", 
+    	sendto_one(cptr, ":%s %d %s :HUB:%s MS:%d", 
 		   ME, RPL_STATSDEFINE, nick,
 #ifdef HUB
 		   "yes",
 #else
 		   "no",
 #endif
-#ifdef PREFER_SERVER
-		   PREFER_SERVER,
-#else
-		   -1,
-#endif
 		   MAXSERVERS);
     	sendto_one(cptr,
-		   ":%s %d %s :LQ:%d MXC:%d TS:%d HRD:%d HGL:%d WWD:%d CTO:%d",
+		   ":%s %d %s :LQ:%d MXC:%d TS:%d HRD:%d HGL:%d WWD:%d ATO:%d",
 		   ME, RPL_STATSDEFINE, nick, LISTENQUEUE, MAXCONNECTIONS,
 		   TIMESEC, HANGONRETRYDELAY, HANGONGOODLINK, WRITEWAITDELAY,
-		   CONNECTTIMEOUT);
+		   ACCEPTTIMEOUT);
     	sendto_one(cptr, ":%s %d %s :KCTL:%d DCTL:%d LDCTL: %d CF:%d MCPU:%d",
 		   ME, RPL_STATSDEFINE, nick, KILLCHASETIMELIMIT,
 		   DELAYCHASETIMELIMIT, LDELAYCHASETIMELIMIT,

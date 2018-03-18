@@ -31,3 +31,4 @@
 #include "mod_rfc931_ext.h"
 #include "mod_socks_ext.h"
 #include "mod_pipe_ext.h"
+#include "mod_lhex_ext.h"

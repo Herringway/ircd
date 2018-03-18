@@ -19,15 +19,7 @@
 
 /*
  *  ircdwatch configuration options.
- *
- *  make sure SPATH has a fully qualified path or that the IRC server binary
- *  is within the directory specified in server_bin_dir (see Makefile) if
- *  you plan to let ircdwatch find the server binary. 
- *
  */
-
-/* file within DPATH that holds the pid of ircdwatch */
-#define IRCDWATCH_PID_FILENAME      "ircdwatch.pid"
 
 /* how often (in seconds) should we check that ircd runs? */
 #define IRCDWATCH_POLLING_INTERVAL  30
@@ -60,51 +52,27 @@
  */
 
 /*
- * Pathnames and defaults of irc system's support files. Please note that
- * these are only the recommened names and paths. Change as needed.
- * You must define these to something, even if you don't really want them.
- */
-#define	CPATH	"ircd.conf"	/* configuration file */
-#define	MPATH	"ircd.motd"	/* motd file */
-#define	LPATH	"ircd.log"	/* debugging log */
-#define	PPATH	"ircd.pid"	/* PID file */
-#define	TPATH	"ircd.tune"	/* tuning file */
-#define	QPATH	"iauth.conf"	/* authentication slave configuration file */
-#define	OPATH	"iauth.log"	/* authentication slave debugging log */
-
-/*
  * If you don't want the server to keep reading the MOTD file from the disk,
  * define CACHED_MOTD.  The server will store the MOTD in memory, and only
  * read it again from the disk when rehashing if the file has changed.
  */
 #define	CACHED_MOTD
 
-/*
- * Define these filenames to maintain a list of persons who log
- * into this server. Logging will stop when the file does not exist.
- * Logging will be disabled also if you do not define this.
- *	FNAME_USERLOG just logs user connections,
- *	FNAME_OPERLOG logs every successful use of /oper.
- *	FNAME_CONNLOG logs every user rejected or uncomplete connection
- *	FNAME_AUTHLOG logs authentication information retrieved by iauth
- *		      (file must exist on startup, see man page)
- * These are either full paths or files within "ircd_dir" (see Makefile).
- */
-#define FNAME_USERLOG "@logdir@users" /* */
-#define FNAME_OPERLOG "@logdir@opers" /* */
-#define FNAME_CONNLOG "@logdir@rejects" /* */
-#define FNAME_AUTHLOG "@logdir@auth" /* */
-
 /* CHROOTDIR
  *
  * Define for value added security if you are a rooter.
  *
- * All files you access must be in the directory you define as IRCDDIR.
- * (This may effect the PATH locations above, though you can symlink it)
+ * CPATH, MPATH, LPATH, PPATH, TPATH, QPATH, OPATH, 
+ * FNAME_USERLOG, FNAME_OPERLOG, FNAME_CONNLOG, FNAME_AUTHLOG
+ * must have RPATH as root directory! Set them in Makefile
  *
  * You may want to define IRC_UID and IRC_GID
  */
 #undef CHROOTDIR
+
+#if defined(CHROOTDIR)
+  #define ROOT_PATH	"/where/to/change/root/dir"
+#endif
 
 /* ENABLE_SUMMON
  *
@@ -208,15 +176,6 @@
  * to a leaf which just has 1 server (typically the uplink).
  */
 /* #define	HUB */
-
-/* 
- * Defining PREFER_SERVER will give priority to server traffic over
- * client traffic.
- * Define this correctly for performance reasons. If defined, value of 0
- * creates biggest load on cpu, and bigger values decrease the cpu load
- * on price of user-friendlyness.
- */
-#define PREFER_SERVER 1
 
 #ifdef HUB
 /*
@@ -470,8 +429,8 @@
  * (HANGONRETRYDELAY). This latter has to be long enough that the
  * other end of the connection has time to notice it broke too.
  */
-#define HANGONRETRYDELAY 10	/* Recommended value: 10 seconds */
-#define HANGONGOODLINK 300	/* Recommended value: 5 minutes */
+#define HANGONRETRYDELAY 30	/* Recommended value: 30 seconds */
+#define HANGONGOODLINK 900	/* Recommended value: 15 minutes */
 
 /*
  * Number of seconds to wait for write to complete if stuck.
@@ -479,12 +438,12 @@
 #define WRITEWAITDELAY     15	/* Recommended value: 15 */
 
 /*
- * Number of seconds to wait for a connect(2) call to complete.
- * NOTE: this must be at *LEAST* 10.  When a client connects, it has
- * CONNECTTIMEOUT - 10 seconds for its host to respond to an ident lookup
- * query and for a DNS answer to be retrieved.
+ * Number of seconds to wait for DNS/authentication to complete.
+ * Note that iauth's default timeout per module is 30 seconds, so this value
+ * should be at least 30 * number of modules.  Extra time should really be
+ * given to be safe.
  */
-#define	CONNECTTIMEOUT	30	/* Recommended value: 30 */
+#define	ACCEPTTIMEOUT      90	/* Recommended value: 90 */
 
 /*
  * Max time from the nickname change that still causes KILL
@@ -511,15 +470,6 @@
  * Max number of channels a user is allowed to join.
  */
 #define MAXCHANNELSPERUSER  10	/* Recommended value: 10 */
-
-/*
- * SendQ-Always causes the server to put all outbound data into the sendq and
- * flushing the sendq at the end of input processing. This should cause more
- * efficient write's to be made to the network.
- * There *shouldn't* be any problems with this method.
- * -avalon
- */
-#define	SENDQ_ALWAYS
 
 /*
  * USE_IAUTH makes ircd use the iauth program for authentication.
@@ -555,13 +505,6 @@
 /* #undef	NO_PREFIX */
 
 /* ------------------------- END CONFIGURATION SECTION -------------------- */
-#define	CONFIGFILE CPATH
-#define	IRCD_PIDFILE PPATH
-
-#ifdef DEBUGMODE
-# define LOGFILE LPATH
-#endif
-
 #ifndef ENABLE_SUMMON
 #  undef LEAST_IDLE
 #endif

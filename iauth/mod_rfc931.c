@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: mod_rfc931.c,v 1.13 1999/02/03 22:32:55 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: mod_rfc931.c,v 1.16 1999/07/11 20:56:25 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -111,7 +111,7 @@ AnInstance *self;
  *
  *	This procedure is called to start an authentication.
  *	Returns 0 if everything went fine,
- *	anything else otherwise (nothing to be done, or failure)
+ *	-1 else otherwise (nothing to be done, or failure)
  *
  *	It is responsible for sending error messages where appropriate.
  *	In case of failure, it's responsible for cleaning up (e.g. rfc931_clean
@@ -128,6 +128,14 @@ u_int cl;
 	if (st->options & OPT_LAZY && cldata[cl].state & A_DENY)
 	    {
 		DebugLog((ALOG_D931, 0, "rfc931_start(%d): Lazy.", cl));
+		return -1;
+	    }
+	if (cldata[cl].authuser &&
+	    cldata[cl].authfrom < cldata[cl].instance->in)
+	    {
+		DebugLog((ALOG_D931, 0,
+			  "rfc931_start(%d): Instance %d already got the info",
+			  cl, cldata[cl].authfrom));
 		return -1;
 	    }
 	DebugLog((ALOG_D931, 0, "rfc931_start(%d): Connecting to %s %u", cl,
@@ -245,20 +253,11 @@ u_int cl;
 				while (ch && *ch && *ch == ' ') ch++;
 				if (ch && *ch)
 				    {
-					char *chk = ch-1;
-
-					while (*++chk)
-						if (*chk == ':' ||
-						    *chk == '@' ||
-						    *chk == '[' ||
-						    isspace(*chk))
-							break;
-					if (*chk)
-						other = 1;
 					if (cldata[cl].authuser)
 						free(cldata[cl].authuser);
 					cldata[cl].authuser = mystrdup(ch);
-					cldata[cl].best = cldata[cl].instance;
+					cldata[cl].authfrom =
+						cldata[cl].instance->in;
 					if (other)
 						st->other += 1;
 					else
@@ -286,7 +285,7 @@ u_int cl;
 					ch = cldata[cl].inbuffer;
 					while (*ch)
 					    {
-						if (!(isalnum || 
+						if (!(isalnum(*ch) || 
 						      ispunct(*ch) ||
 						      isspace(*ch)))
 							break;

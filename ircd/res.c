@@ -24,7 +24,7 @@
 #undef RES_C
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: res.c,v 1.18 1998/12/13 00:19:03 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: res.c,v 1.21 1999/07/02 17:31:17 kalt Exp $";
 #endif
 
 /* #undef	DEBUG	/* because there is a lot of debug code in here :-) */
@@ -249,8 +249,6 @@ time_t	now;
 					sendto_iauth("%d d", cptr->fd);
 #endif
 					ClearDNS(cptr);
-					if (!DoingAuth(cptr))	/* XAuth? */
-						SetAccess(cptr); /* unused */
 					break;
 				case ASYNC_CONNECT :
 					sendto_flag(SCH_ERROR,
@@ -619,13 +617,13 @@ HEADER	*hptr;
 
 		cp += n;
 		type = (int)ircd_getshort((u_char *)cp);
-		cp += sizeof(short);
+		cp += 2; /* INT16SZ */
 		class = (int)ircd_getshort((u_char *)cp);
-		cp += sizeof(short);
+		cp += 2; /* INT16SZ */
 		rptr->ttl = ircd_getlong((u_char *)cp);
-		cp += sizeof(rptr->ttl);
+		cp += 4; /* INT32SZ */
 		dlen =  (int)ircd_getshort((u_char *)cp);
-		cp += sizeof(short);
+		cp += 2; /* INT16SZ */
 		rptr->type = type;
 
 		len = strlen(hostbuf);
@@ -718,11 +716,7 @@ HEADER	*hptr;
 			 */
 			if (hp->h_name)
 			    {
-				if (alias >= &(hp->h_aliases[MAXALIASES-1]))
-					break;
-				*alias = (char *)MyMalloc(len + 1);
-				(void)strcpy(*alias++, hostbuf);
-				*alias = NULL;
+				Debug((DEBUG_INFO, "duplicate PTR ignored"));
 			    }
 			else
 			    {

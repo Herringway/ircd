@@ -218,25 +218,30 @@ fi
 ])
 
 
-AC_DEFUN(IRC_SOLARIS_2,
-[AC_MSG_CHECKING([for Solaris 2.x (SunOS 5.x)])
-AC_CACHE_VAL(irc_cv_solaris_2,
-[if test "x`(uname) 2>/dev/null`" = "xSunOS" &&
-  uname -r 2>/dev/null | grep "^5" >/dev/null; then
-  irc_cv_solaris_2="`uname -r | sed -e \"s/^5/2/g\"`"
+AC_DEFUN(IRC_SUN,
+[AC_MSG_CHECKING([for SunOS])
+AC_CACHE_VAL(irc_cv_sun,
+[if test "x`(uname) 2>/dev/null`" = "xSunOS"; then
+  irc_cv_sun="`uname -r`"
 else
-  irc_cv_solaris_2=no
+  irc_cv_sun=no
 fi
 ])
-if test "$irc_cv_solaris_2" = no; then
+irc_cv_solaris_2=no
+if test "$irc_sun" = no; then
   AC_MSG_RESULT(no)
 else
-  AC_MSG_RESULT([yes, $irc_cv_solaris_2])
-  AC_DEFINE(SOLARIS_2)
-  if echo "$irc_cv_solaris_2" | egrep "^2\.(0|1|2)" >/dev/null; then
-    AC_DEFINE(SOLARIS_2_0_2_1_2_2)
-  elif echo "$irc_cv_solaris_2" | grep "^2\.3" >/dev/null; then
-    AC_DEFINE(SOLARIS_2_3)
+  if uname -r 2>/dev/null | grep "^5" >/dev/null; then
+    irc_cv_solaris_2="`uname -r | sed -e \"s/^5/2/g\"`"
+    AC_MSG_RESULT([yes, Solaris $irc_cv_solaris_2])
+    AC_DEFINE(SOLARIS_2)
+    if echo "$irc_cv_solaris_2" | egrep "^2\.(0|1|2)" >/dev/null; then
+      AC_DEFINE(SOLARIS_2_0_2_1_2_2)
+    elif echo "$irc_cv_solaris_2" | grep "^2\.3" >/dev/null; then
+      AC_DEFINE(SOLARIS_2_3)
+    fi
+  else
+    AC_MSG_RESULT([yes, SunOS $irc_cv_sun])
   fi
 fi
 ])
@@ -351,6 +356,22 @@ AC_MSG_RESULT(no))
 ])
 
 
+AC_DEFUN(IRC_HPUX_CC,
+[AC_MSG_CHECKING([for HPUX's cc])
+AC_EGREP_CPP(yes,
+[#ifdef hpux
+yes
+#endif],
+if test x$CC = xcc; then
+  AC_MSG_RESULT(yes)
+  CC="$CC -Ae"
+else
+  AC_MSG_RESULT(no)
+fi,
+AC_MSG_RESULT(no))
+])
+
+
 AC_DEFUN(IRC_ALPHA_BETA,
 [AC_MSG_CHECKING(whether this is an alpha/beta release)
 AC_CACHE_VAL(irc_cv_alpha_beta,
@@ -394,40 +415,25 @@ fi
 AC_DEFUN(IRC_SELECT_POLL,
 [AC_MSG_CHECKING([whether select or poll system call will be used])
 AC_CACHE_VAL(irc_cv_select_poll,
-[if test x$ac_cv_func_select = xyes; then
+[if test "$irc_cv_sun" != "no" && test "x$irc_cv_solaris_2" = "xno"; then
+  # we don't like SunOS' poll() function
   irc_cv_select_poll=select
-else
-  irc_cv_select_poll=poll
-fi
-AC_EGREP_CPP(yes,[
-#if (defined(sun) && (defined(__SVR4) || defined(__svr4__))) \
-    || defined(sgi) || defined(__sgi) \
-    || defined(_AIX)
-yes
-#endif
-],
-irc_cv_select_poll=poll,
-)])
-#if test $irc_cv_select_poll = poll; then
-#  AC_MSG_RESULT(poll)
-#  AC_DEFINE(USE_POLL)
-#else
-#  AC_MSG_RESULT(select)
-#  if test $ac_cv_func_poll = yes; then
-#    AC_MSG_WARN([poll() seems to exist on your system, edit setup.h to use it.])
-#  fi
-#fi
-if test $ac_cv_func_poll = yes; then
+else  
+  if test "$ac_cv_func_poll" = "yes"; then
+    irc_cv_select_poll=poll
+  else
+    irc_cv_select_poll=select
+  fi
+fi])
+
+if test "$irc_cv_select_poll" = "poll"; then
   AC_MSG_RESULT(poll)
   AC_DEFINE(USE_POLL)
-  if test $irc_cv_select_poll = select; then
-    AC_MSG_WARN([poll() was unexpectedly found on this system, it will be used; please report system type and version to ircd-dev@irc.org])
-  fi
-  if test ! $irc_cv_linux = no; then
-    AC_MSG_WARN([Aiiie.. This is linux.  poll() is known to be broken for some releases (2.0.x with libc ?).  You may want to edit setup.h to undefine USE_POLL])
+  if test ! "$irc_cv_linux" = "no"; then
+    AC_MSG_WARN([Aiiie.. This is linux.  poll() is known to be broken for some releases (2.0.x with libc6?).  You may want to edit setup.h to undefine USE_POLL])
   fi
 else
-  AC_MSG_RESULT(select) 
+  AC_MSG_RESULT(select)
 fi
 ])
 
@@ -733,9 +739,7 @@ if test "x$enable_ip6" != x; then
   dnl be smart about it
   AC_MSG_CHECKING([IPv6 system type])
   AC_CACHE_VAL(irc_cv_v6type, [
-    if test -f /usr/include/netinet6/in6_ifattach.h; then
-      irc_cv_v6type=hydrangea
-    else if test -d /usr/inet6; then
+    if test -d /usr/inet6; then
       irc_cv_v6type=linux
     else
       AC_EGREP_CPP(yes, [dnl
@@ -763,29 +767,30 @@ yes
 #ifdef _ZETA_MINAMI_INET6
 yes
 #endif], irc_cv_v6type=zeta)))))
-    fi
     fi])
   AC_MSG_RESULT($irc_cv_v6type)
 
   dnl eventually update LIBS
   case $irc_cv_v6type in
-	hydrangea)
-		LIBS="-L/usr/local/v6/lib -linet6 $LIBS"
-		;;
 	kame)
 		LIBS="-L/usr/local/v6/lib -linet6 $LIBS"
+		CFLAGS="$CFLAGS -I/usr/local/v6/include"
 		;;
 	linux)
 		LIBS="-L/usr/inet6/lib -linet6 $LIBS"
+		CFLAGS="$CFLAGS -I/usr/inet6/include"
 		;;
 	toshiba)
 		LIBS="-L/usr/local/v6/lib -linet6 $LIBS"
+		CFLAGS="$CFLAGS -I/usr/local/v6/include"
 		;;
 	v6d)
 		LIBS="-L/usr/local/v6/lib -lv6 $LIBS"
+		CFLAGS="$CFLAGS -I/usr/local/v6/include"
 		;;
 	zeta)
 		LIBS="-L/usr/local/v6/lib -linet6 $LIBS"
+		CFLAGS="$CFLAGS -I/usr/local/v6/include"
 		;;
 	esac
 
@@ -797,6 +802,18 @@ yes
   else
     AC_MSG_RESULT(no)
   fi
+fi
+])
+
+
+AC_DEFUN(IRC_SHAREDMODULES,
+[AC_ARG_ENABLE(dsm, [  --enable-dsm            enables dynamically shared modules for iauth])
+if test "x$enable_dsm" != x; then
+  AC_DEFINE(USE_DSM)
+dnl  AC_CONFIG_HEADER(dl.h)
+  AC_CHECK_HEADERS(dlfcn.h)
+  AC_CHECK_LIB(dl, dlclose, IRC_DLIB="-ldl")
+  AC_SUBST(IRC_DLIB)
 fi
 ])
 
@@ -839,13 +856,12 @@ libexecdir='${exec_prefix}/libexec'
 datadir='${prefix}/share'
 sysconfdir='${prefix}/etc'
 sharedstatedir='${prefix}/com'
-localstatedir='${prefix}/var'
-libdir='${exec_prefix}/lib/ircd'
+localstatedir='${prefix}/var/run'
 includedir='${prefix}/include'
 oldincludedir='/usr/include'
 infodir='${prefix}/info'
 mandir='${prefix}/man'
-logdir=''
+logdir='${prefix}/var/log/ircd'
 
 # Initialize some other variables.
 subdirs=
@@ -963,11 +979,10 @@ Directory and file names:
   --sysconfdir=DIR        read-only single-machine data in DIR [PREFIX/etc]
   --sharedstatedir=DIR    modifiable architecture-independent data in DIR
                           [PREFIX/com]
-  --localstatedir=DIR     modifiable single-machine data in DIR [PREFIX/var]
-  --libdir=DIR            object code libraries in DIR [EPREFIX/lib]
+  --localstatedir=DIR     modifiable single-machine data in DIR[PREFIX/var/run]
   --includedir=DIR        C header files in DIR [PREFIX/include]
   --oldincludedir=DIR     C header files for non-gcc in DIR [/usr/include]
-  --logdir=DIR            log files in DIR [PREFIX/logs]
+  --logdir=DIR            log files in DIR [PREFIX/var/log/ircd]
   --infodir=DIR           info documentation in DIR [PREFIX/info]
   --mandir=DIR            man documentation in DIR [PREFIX/man]
   --srcdir=DIR            find the sources in DIR [configure dir or ..]
@@ -1313,6 +1328,15 @@ test -z "$INSTALL_DATA" && INSTALL_DATA='${INSTALL} -m 644'
 AC_SUBST(INSTALL_DATA)dnl
 ])
 
+AC_DEFUN(IRC_CYGWIN,
+[AC_CYGWIN
+if test ! -z "$CYGWIN"; then
+  if test ! -x /bin/mv || test ! -x /bin/rm || test ! -x /bin/sh; then
+    AC_MSG_ERROR([mv, rm and/or sh is missing from /bin])
+  fi
+  AC_MSG_WARN([The IRC client and the iauth program do not work under the CYGWIN environment.])
+fi
+])
 
 AC_DEFUN(IRC_PROG_CC,
 [define(AC_PROVIDE_AC_PROG_CC)
@@ -1410,7 +1434,7 @@ dnl ----
 dnl main
 dnl ----
 
-AC_REVISION([$Id: configure.in,v 1.30 1999/01/18 00:54:20 kalt Exp $])
+AC_REVISION([$Id: configure.in,v 1.46 1999/08/13 17:18:23 kalt Exp $])
 AC_PREREQ(2.13)
 IRC_INIT(../ircd/ircd.c)
 AC_CONFIG_HEADER(setup.h:../support/setup.h.in)
@@ -1428,12 +1452,14 @@ IRC_AIX
 AC_ISC_POSIX
 AC_MINIX
 IRC_SGI_CC
-IRC_SOLARIS_2
+IRC_HPUX_CC
+IRC_SUN
 IRC_LINUX
+IRC_CYGWIN
 
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS(stdio.h stdlib.h sys/types.h sys/bitypes.h stddef.h stdarg.h unistd.h ctype.h memory.h curses.h cursesX.h term.h sgtty.h errno.h sys/errno.h sys/syscall.h pwd.h math.h utmp.h fcntl.h signal.h sys/ioctl.h sys/file.h sys/filio.h sys/socket.h sys/stat.h sys/resource.h sys/select.h sys/poll.h stropts.h netdb.h netinet/in.h sys/un.h arpa/inet.h sys/param.h syslog.h sys/syslog.h string.h strings.h sys/time.h time.h sys/times.h netinet/in_systm.h netinfo/ni.h resolv.h arpa/nameser.h)
+AC_CHECK_HEADERS(stdio.h stdlib.h sys/types.h sys/bitypes.h stddef.h stdarg.h unistd.h ctype.h memory.h ncurses.h curses.h cursesX.h term.h sgtty.h errno.h sys/errno.h sys/syscall.h pwd.h math.h utmp.h fcntl.h signal.h sys/ioctl.h sys/file.h sys/filio.h sys/socket.h sys/stat.h sys/resource.h sys/select.h sys/poll.h stropts.h netdb.h netinet/in.h sys/un.h arpa/inet.h sys/param.h syslog.h sys/syslog.h string.h strings.h sys/time.h time.h sys/times.h netinet/in_systm.h netinfo/ni.h resolv.h arpa/nameser.h)
 IRC_DECL_SYS_ERRLIST
 IRC_DECL_SYS_NERR
 IRC_DECL_ERRNO
@@ -1486,7 +1512,8 @@ IRC_NON_BLOCKING_SYSTEM
 IRC_STDARG
 IRC_PATH_RESCONF
 IRC_IP6
+IRC_SHAREDMODULES
 IRC_ALPHA_BETA
 
-AC_OUTPUT(Makefile:../support/Makefile.in version.c.SH:../ircd/version.c.SH.in sums:../support/sums.in config.h:../support/config.h.dist tkconf.h:../support/tkconf.h.dist)
+AC_OUTPUT(Makefile:../support/Makefile.in version.c.SH:../ircd/version.c.SH.in sums:../support/sums.in tkconf.h:../support/tkconf.h.dist)
 AC_OUTPUT_COMMANDS(chmod a+x version.c.SH)

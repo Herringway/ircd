@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: iauth.c,v 1.7 1999/01/13 02:14:36 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: iauth.c,v 1.11 1999/06/17 01:22:20 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -140,13 +140,19 @@ int	argc;
 char	*argv[];
 {
 	time_t	nextst = time(NULL) + 90;
+	char *xopt;
 
 	if (argc == 2 && !strcmp(argv[1], "-X"))
 		exit(0);
 
 	if (isatty(0))
 	    {
-		(void)printf("iauth %s\n", make_version());
+		(void)printf("iauth %s", make_version());
+#if defined(USE_DSM)
+			(void)printf(" (with DSM support)\n");
+#else
+			(void)printf("\n");
+#endif
 		if (argc == 3 && !strcmp(argv[1], "-c"))
 		    {
 			(void)printf("\nReading \"%s\"\n\n", argv[2]);
@@ -179,7 +185,9 @@ char	*argv[];
 #endif
 		   );
 	init_io();
-	conf_read(NULL);
+	xopt = conf_read(NULL);
+	sendto_ircd("V %s", make_version());
+	sendto_ircd("O %s", xopt);
 	conf_ircd();
 
 #if defined(IAUTH_DEBUG)

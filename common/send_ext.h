@@ -37,18 +37,20 @@ EXTERN int sendto_one (aClient *to, char *pattern, ...);
 #endif /* USE_STDARG */
 #ifndef CLIENT_COMPILE
 EXTERN void flush_connections __P((int fd));
+EXTERN void flush_fdary __P((FdAry *));
 EXTERN void setup_svchans();
 EXTERN void sendto_flog __P((aClient *cptr, char *msg, time_t duration,
 			     char *username, char *hostname));
 #if ! USE_STDARG
 EXTERN void sendto_channel_butone();
 EXTERN void sendto_serv_butone();
-EXTERN void sendto_serv_v();
-EXTERN void sendto_serv_notv();
+EXTERN int sendto_serv_v();
+EXTERN int sendto_serv_notv();
 EXTERN void sendto_common_channels();
 EXTERN void sendto_channel_butserv();
 EXTERN void sendto_match_servs();
-EXTERN void sendto_match_servs_v();
+EXTERN int sendto_match_servs_v();
+EXTERN int sendto_match_servs_notv();
 EXTERN void sendto_match_butone();
 EXTERN void sendto_ops_butone();
 EXTERN void sendto_prefix_one();
@@ -57,15 +59,17 @@ EXTERN void sendto_flag();
 EXTERN void sendto_channel_butone (aClient *one, aClient *from,
 				   aChannel *chptr, char *pattern, ...);
 EXTERN void sendto_serv_butone (aClient *one, char *pattern, ...);
-EXTERN void sendto_serv_v (aClient *one, int ver, char *pattern, ...);
-EXTERN void sendto_serv_notv (aClient *one, int ver, char *pattern, ...);
+EXTERN int sendto_serv_v (aClient *one, int ver, char *pattern, ...);
+EXTERN int sendto_serv_notv (aClient *one, int ver, char *pattern, ...);
 EXTERN void sendto_common_channels (aClient *user, char *pattern, ...);
 EXTERN void sendto_channel_butserv (aChannel *chptr, aClient *from,
 				    char *pattern, ...);
 EXTERN void sendto_match_servs (aChannel *chptr, aClient *from,
 				char *format, ...);
-EXTERN void sendto_match_servs_v (aChannel *chptr, aClient *from, int ver,
+EXTERN int sendto_match_servs_v (aChannel *chptr, aClient *from, int ver,
 				char *format, ...);
+EXTERN int sendto_match_servs_notv (aChannel *chptr, aClient *from, int ver,
+				    char *format, ...);
 EXTERN void sendto_match_butone (aClient *one, aClient *from, char *mask,
 				 int what, char *pattern, ...);
 EXTERN void sendto_ops_butone (aClient *one, aClient *from, char *pattern,

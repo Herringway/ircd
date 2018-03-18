@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_user.c,v 1.66 1999/01/23 23:05:52 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_user.c,v 1.86 1999/07/17 11:47:49 q Exp $";
 #endif
 
 #include "os.h"
@@ -308,6 +308,30 @@ char	*buffer;
 	return cbuf;
 }
 
+/*
+** ereject_user
+**	extracted from register_user for clarity
+**	early rejection of a user connection, with logging.
+*/
+int
+ereject_user(cptr, shortm, longm)
+aClient *cptr;
+char *shortm, *longm;
+{
+#if defined(USE_SYSLOG) && defined(SYSLOG_CONN)
+	syslog(LOG_NOTICE, "%s ( %s ): <none>@%s [%s] %c\n",
+	       myctime(cptr->firsttime), shortm, longm,
+	       (IsUnixSocket(cptr)) ? me.sockhost :
+	       ((cptr->hostp) ? cptr->hostp->h_name : cptr->sockhost),
+	       cptr->auth, cptr->exitc);
+#endif		    
+#if defined(FNAME_CONNLOG) || defined(USE_SERVICES)
+	sendto_flog(cptr, shortm, 0, "<none>",
+		    (IsUnixSocket(cptr)) ? me.sockhost :
+		    ((cptr->hostp) ? cptr->hostp->h_name : cptr->sockhost));
+#endif
+	return exit_client(cptr, cptr, &me, longm);
+}
 
 /*
 ** register_user
@@ -331,7 +355,7 @@ char	*buffer;
 **	   nick from local user or kill him/her...
 */
 
-static	int	register_user(cptr, sptr, nick, username)
+int	register_user(cptr, sptr, nick, username)
 aClient	*cptr;
 aClient	*sptr;
 char	*nick, *username;
@@ -356,7 +380,50 @@ char	*nick, *username;
 		char *reason = NULL;
 
 #if defined(USE_IAUTH)
+		static time_t last = 0;
+		static u_int count = 0;
+
+		if (iauth_options & XOPT_EARLYPARSE && DoingXAuth(cptr))
+		    {
+			cptr->flags |= FLAGS_WXAUTH;
+			/* fool check_pings() and give iauth more time! */
+			cptr->firsttime = timeofday;
+			cptr->lasttime = timeofday;
+			strncpyzt(sptr->user->username, username, USERLEN+1);
+			if (sptr->passwd[0])
+				sendto_iauth("%d P %s", sptr->fd,sptr->passwd);
+			sendto_iauth("%d U %s", sptr->fd, username);
+			return 1;
+		    }
+		if (!DoneXAuth(sptr) && (iauth_options & XOPT_REQUIRED))
+		    {
+			char *reason;
+
+			if (iauth_options & XOPT_NOTIMEOUT)
+			    {
+				count += 1;
+				if (timeofday - last > 300)
+				    {
+					sendto_flag(SCH_AUTH, 
+	    "iauth may not be running! (refusing new user connections)");
+					last = timeofday;
+				    }
+				reason = "No iauth!";
+			    }
+			else
+				reason = "iauth t/o";
+			sptr->exitc = EXITC_AUTHFAIL;
+			return ereject_user(cptr, reason,
+					    "Authentication failure!");
+		    }
+		if (timeofday - last > 300 && count)
+		    {
+			sendto_flag(SCH_AUTH, "%d users rejected.", count);
+			count = 0;
+		    }
+
 		/* this should not be needed, but there's a bug.. -kalt */
+		/* haven't seen any notice like this, ever.. no bug no more? */
 		if (*cptr->username == '\0')
 		    {
 			sendto_flag(SCH_AUTH,
@@ -421,54 +488,13 @@ char	*nick, *username;
 		strncpyzt(user->username, username, USERLEN+1);
 #endif
 
-		if (sptr->exitc == EXITC_AREF)
+		if (sptr->exitc == EXITC_AREF || sptr->exitc == EXITC_AREFQ)
 		    {
-			char *masked = NULL, *format;
-
-			/*
-			** All this masking is rather ugly but prompted by
-			** the fact that the hostnames should not be made
-			** available in realtime. (first iauth module using
-			** this detects open proxies)
-			** Then again, if detailed information is needed,
-			** the admin should check logs and/or the module
-			** should be changed to send details to &AUTH.
-			*/
-			if (sptr->hostp)
-			    {
-				masked = index(sptr->hostp->h_name, '.');
-				format = "Denied connection from ???%s.";
-			    }
-			else
-			    {
-				char *dot;
-
-				masked = inetntoa((char *)&sptr->ip);
-				dot = rindex(masked, '.');
-				if (dot)
-					*(dot+1) = '\0';
-				else
-					masked = NULL;
-				format = "Denied connection from %s???.";
-			    }
-			if (masked) /* just to be safe */
-				sendto_flag(SCH_LOCAL, format, masked);
-			else
-				sendto_flag(SCH_LOCAL, "Denied connection.");
-#if defined(USE_SYSLOG) && defined(SYSLOG_CONN)
-			syslog(LOG_NOTICE, "%s ( %s ): <none>@%s [%s] %c\n",
-			       myctime(sptr->firsttime), " Denied  ",
-			       (IsUnixSocket(sptr)) ? me.sockhost :
-			       ((sptr->hostp) ? sptr->hostp->h_name :
-				sptr->sockhost), sptr->auth, sptr->exitc);
-#endif		    
-#if defined(FNAME_CONNLOG) || defined(USE_SERVICES)
-			sendto_flog(sptr, " Denied  ", 0, "<none>",
-				    (IsUnixSocket(sptr)) ? me.sockhost :
-				    ((sptr->hostp) ? sptr->hostp->h_name :
-				    sptr->sockhost));
-#endif
-			return exit_client(cptr, sptr, &me, "Denied Access");
+			if (sptr->exitc == EXITC_AREF)
+				sendto_flag(SCH_LOCAL,
+					    "Denied connection from %s.",
+					    get_client_host(sptr));
+			return ereject_user(cptr, " Denied  ","Denied access");
 		    }
 		if ((i = check_client(sptr)))
 		    {
@@ -491,20 +517,8 @@ char	*nick, *username;
 			sptr->exitc = EXITC_REF;
 			sendto_flag(SCH_LOCAL, "%s from %s.",
 				    exit_msg[i].longm, get_client_host(sptr));
-#if defined(USE_SYSLOG) && defined(SYSLOG_CONN)
-			syslog(LOG_NOTICE, "%s ( %s ): <none>@%s [%s] %c\n",
-			       myctime(sptr->firsttime), exit_msg[i].shortm,
-			       (IsUnixSocket(sptr)) ? me.sockhost :
-			       ((sptr->hostp) ? sptr->hostp->h_name :
-				sptr->sockhost), sptr->auth, sptr->exitc);
-#endif		    
-#if defined(FNAME_CONNLOG) || defined(USE_SERVICES)
-			sendto_flog(sptr, exit_msg[i].shortm, 0, "<none>",
-				    (IsUnixSocket(sptr)) ? me.sockhost :
-				    ((sptr->hostp) ? sptr->hostp->h_name :
-				    sptr->sockhost));
-#endif
-			return exit_client(cptr, sptr, &me, exit_msg[i].longm);
+			return ereject_user(cptr, exit_msg[i].shortm,
+					    exit_msg[i].longm);
 		    }
 
 #ifndef	NO_PREFIX
@@ -679,7 +693,7 @@ char	*nick, *username;
 ** m_nick
 **	parv[0] = sender prefix
 **	parv[1] = nickname
-** the following are only used between since version 2.9 between servers
+** the following are only used between servers since version 2.9
 **	parv[2] = hopcount
 **	parv[3] = username (login name, account)
 **	parv[4] = client host name
@@ -808,14 +822,28 @@ char	*parv[];
 		sptr->flags |= FLAGS_KILLED;
 		return exit_client(cptr, sptr, &me, "Nick/Server collision");
 	    }
-	/*
-	** Nick is free, and it comes from another server or
-	** it has been free for a while here
-	*/
-	if (!(acptr = find_client(nick, NULL)) &&
-	    (IsServer(cptr) || !(bootopt & BOOT_PROT) ||
-	     !(delayed = find_history(nick, (long)DELAYCHASETIMELIMIT))))
-		goto nickkilldone;  /* No collisions, all clear... */
+	if (!(acptr = find_client(nick, NULL)))
+	    {
+		aClient	*acptr2;
+
+		if (IsServer(cptr) || !(bootopt & BOOT_PROT))
+			goto nickkilldone;
+		if ((acptr2 = get_history(nick, (long)(KILLCHASETIMELIMIT))) &&
+		    !MyConnect(acptr2))
+			/*
+			** Lock nick for KCTL so one cannot nick collide
+			** (due to kill chase) people who recently changed
+			** their nicks. --Beeth
+			*/
+			delayed = 1;
+		else
+			/*
+			** Let ND work
+			*/
+			delayed = find_history(nick, (long)(DELAYCHASETIMELIMIT));
+		if (!delayed)
+			goto nickkilldone;  /* No collisions, all clear... */
+	    }
 	/*
 	** If acptr == sptr, then we have a client doing a nick
 	** change between *equivalent* nicknames as far as server
@@ -939,27 +967,34 @@ char	*parv[];
 nickkilldone:
 	if (IsServer(sptr))
 	    {
-		/* A server introducing a new client, change source */
+		char	*pv[7];
 
+		if (parc != 8)
+		    {
+			sendto_flag(SCH_NOTICE,
+			    "Bad NICK param count (%d) for %s from %s via %s",
+				    parc, parv[1], sptr->name,
+				    get_client_name(cptr, FALSE));
+			sendto_one(cptr, ":%s KILL %s :%s (Bad NICK %d)",
+				   ME, nick, ME, parc);
+			return 0;
+		    }
+		/* A server introducing a new client, change source */
 		sptr = make_client(cptr);
 		add_client_to_list(sptr);
 		if (parc > 2)
 			sptr->hopcount = atoi(parv[2]);
 		(void)strcpy(sptr->name, nick);
-		if (parc == 8 && cptr->serv)
-		    {
-			char	*pv[7];
 
-			pv[0] = sptr->name;
-			pv[1] = parv[3];
-			pv[2] = parv[4];
-			pv[3] = parv[5];
-			pv[4] = parv[7];
-			pv[5] = parv[6];
-			pv[6] = NULL;
-			(void)add_to_client_hash_table(nick, sptr);
-			return m_user(cptr, sptr, 6, pv);
-		    }
+		pv[0] = sptr->name;
+		pv[1] = parv[3];
+		pv[2] = parv[4];
+		pv[3] = parv[5];
+		pv[4] = parv[7];
+		pv[5] = parv[6];
+		pv[6] = NULL;
+		(void)add_to_client_hash_table(nick, sptr);
+		return m_user(cptr, sptr, 6, pv);
 	    }
 	else if (sptr->name[0])		/* NICK received before, changing */
 	    {
@@ -1138,13 +1173,6 @@ int	parc, notice;
 			if (*s == '*' || *s == '?')
 			    {
 				sendto_one(sptr, err_str(ERR_WILDTOPLEVEL,
-					   parv[0]), nick);
-				continue;
-			    }
-			if ((s = (char *)rindex(ME, '.')) &&
-			    strcasecmp(rindex(nick, '.'), s))
-			    {
-				sendto_one(sptr, err_str(ERR_BADMASK,
 					   parv[0]), nick);
 				continue;
 			    }
@@ -1329,7 +1357,6 @@ aChannel *chptr;
 int oper;
 {
 	Reg	Link	*lp;
-	aChannel *channame;
 	int	member;
 
 	if (!IsAnonymous(chptr))
@@ -1438,7 +1465,7 @@ char	*parv[];
 	aChannel *chptr, *mychannel;
 	char	*channame = NULL;
 	int	oper = parc > 2 ? (*parv[2] == 'o' ): 0; /* Show OPERS only */
-	int	member, penalty = 0;
+	int	penalty = 0;
 	char	*p, *mask;
 
 	if (parc < 2)
@@ -1515,7 +1542,7 @@ aClient	*sptr, *acptr;
 		0,	/* joined */
 		0,	/* flags */
 		NULL,	/* servp */
-		NULL, NULL, NULL,	/* next, prev, bcptr */
+		NULL,	/* next, prev, bcptr */
 		"<Unknown>",	/* user */
 		"<Unknown>",	/* host */
 		"<Unknown>",	/* server */
@@ -1819,42 +1846,12 @@ char	*parv[];
 	user->server = find_server_string(me.serv->snum);
 
 user_finish:
-	/* 
-	** servp->userlist's are pointers into usrtop linked list.
-	** Users aren't added to the top always, but only when they come
-	** from a new server.
-	*/
-	if ((user->nextu = user->servp->userlist) == NULL)
-	    {
-		/* First user on this server goes to top of anUser list */
-		user->nextu = usrtop;
-		usrtop->prevu = user;
-		usrtop = user;	/* user->prevu == usrtop->prevu == NULL */
-	    } else {
-		/*
-		** This server already has users,
-		** insert this new user in the middle of the anUser list,
-		** update its neighbours..
-		*/
-		if (user->servp->userlist->prevu) /* previous user */
-		    {
-			user->prevu = user->servp->userlist->prevu;
-			user->servp->userlist->prevu->nextu = user;
-		    } else	/* user->servp->userlist == usrtop */
-			usrtop = user; /* there is no previous user */
-		user->servp->userlist->prevu = user; /* next user */
-	    }
-	user->servp->userlist = user;
-	
+	reorder_client_in_list(sptr);
 	if (sptr->info != DefInfo)
 		MyFree(sptr->info);
 	if (strlen(realname) > REALLEN)
 		realname[REALLEN] = '\0';
 	sptr->info = mystrdup(realname);
-#if defined(USE_IAUTH)
-	if (MyConnect(sptr))
-		sendto_iauth("%d U %.*s", sptr->fd, USERLEN+1, username);
-#endif
 	if (sptr->name[0]) /* NICK already received, now we have USER... */
 	    {
 		if ((parc == 6) && IsServer(cptr)) /* internal m_user() */
@@ -2068,11 +2065,9 @@ char	*parv[];
 	    {
 		if ((killer = index(path, ' ')))
 		    {
-			while (*killer && *killer != '!')
+			while (killer > path && *killer != '!')
 				killer--;
-			if (!*killer)
-				killer = path;
-			else
+			if (killer != path)
 				killer++;
 		    }
 		else

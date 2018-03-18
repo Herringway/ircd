@@ -148,15 +148,15 @@ typedef struct        LineItem aExtData;
 #define	FLAGS_UNIX	 0x0010	/* socket is in the unix domain, not inet */
 #define	FLAGS_CLOSING    0x0020	/* set when closing to suppress errors */
 #define	FLAGS_LISTEN     0x0040 /* used to mark clients which we listen() on */
-#define	FLAGS_CHKACCESS  0x0080 /* ok to check clients access if set [unused]*/
+#define	FLAGS_XAUTHDONE  0x0080 /* iauth is finished with this client */
 #define	FLAGS_DOINGDNS	 0x0100 /* client is waiting for a DNS response */
 #define	FLAGS_AUTH	 0x0200 /* client is waiting on rfc931 response */
 #define	FLAGS_WRAUTH	 0x0400	/* set if we havent writen to ident server */
 #define	FLAGS_LOCAL	 0x0800 /* set for local clients */
 #define	FLAGS_GOTID	 0x1000	/* successful ident lookup achieved */
 #define	FLAGS_XAUTH	 0x2000	/* waiting on external authentication */
-#define	FLAGS_NONL	 0x4000 /* No \n in buffer */
-#define	FLAGS_HELD	 0x8000	/* connection held and reconnect try */
+#define	FLAGS_WXAUTH	 0x4000	/* same as above, but also prevent parsing */
+#define	FLAGS_NONL	 0x8000 /* No \n in buffer */
 #define	FLAGS_CBURST	0x10000	/* set to mark connection burst being sent */
 #define FLAGS_RILINE    0x20000 /* Restricted i-line [unused?] */
 #define FLAGS_QUIT      0x40000 /* QUIT :comment shows it's not a split */
@@ -165,7 +165,8 @@ typedef struct        LineItem aExtData;
 #define	FLAGS_UNKCMD   0x200000	/* has sent an unknown command */
 #define	FLAGS_ZIP      0x400000 /* link is zipped */
 #define	FLAGS_ZIPRQ    0x800000 /* zip requested */
-#define	FLAGS_ZIPSTART	0x1000000 /* start of zip (ignore any CRLF) */
+#define	FLAGS_ZIPSTART 0x1000000 /* start of zip (ignore any CRLF) */
+#define	FLAGS_HELD     0x8000000 /* connection held and reconnect try */
 
 #define	FLAGS_OPER       0x0001	/* Operator */
 #define	FLAGS_LOCOP      0x0002 /* Local operator -- SRB */
@@ -192,7 +193,6 @@ typedef struct        LineItem aExtData;
 #define	SendWallops(x)		((x)->user->flags & FLAGS_WALLOP)
 #define	IsUnixSocket(x)		((x)->flags & FLAGS_UNIX)
 #define	IsListening(x)		((x)->flags & FLAGS_LISTEN)
-#define	DoAccess(x)		((x)->flags & FLAGS_CHKACCESS)
 #define	IsLocal(x)		(MyConnect(x) && (x)->flags & FLAGS_LOCAL)
 #define	IsDead(x)		((x)->flags & FLAGS_DEADSOCKET)
 #define	IsHeld(x)		((x)->flags & FLAGS_HELD)
@@ -205,10 +205,12 @@ typedef struct        LineItem aExtData;
 #define	SetWallops(x)  		((x)->user->flags |= FLAGS_WALLOP)
 #define	SetUnixSock(x)		((x)->flags |= FLAGS_UNIX)
 #define	SetDNS(x)		((x)->flags |= FLAGS_DOINGDNS)
+#define	SetDoneXAuth(x)		((x)->flags |= FLAGS_XAUTHDONE)
 #define	DoingDNS(x)		((x)->flags & FLAGS_DOINGDNS)
-#define	SetAccess(x)		((x)->flags |= FLAGS_CHKACCESS)
 #define	DoingAuth(x)		((x)->flags & FLAGS_AUTH)
 #define	DoingXAuth(x)		((x)->flags & FLAGS_XAUTH)
+#define	WaitingXAuth(x)		((x)->flags & FLAGS_WXAUTH)
+#define	DoneXAuth(x)		((x)->flags & FLAGS_XAUTHDONE)
 #define	NoNewLine(x)		((x)->flags & FLAGS_NONL)
 
 #define	ClearOper(x)		((x)->user->flags &= ~FLAGS_OPER)
@@ -218,7 +220,7 @@ typedef struct        LineItem aExtData;
 #define	ClearDNS(x)		((x)->flags &= ~FLAGS_DOINGDNS)
 #define	ClearAuth(x)		((x)->flags &= ~FLAGS_AUTH)
 #define	ClearXAuth(x)		((x)->flags &= ~FLAGS_XAUTH)
-#define	ClearAccess(x)		((x)->flags &= ~FLAGS_CHKACCESS)
+#define	ClearWXAuth(x)		((x)->flags &= ~FLAGS_WXAUTH)
 
 /*
  * defined debugging levels
@@ -362,7 +364,6 @@ struct	User	{
 				** not yet be in links while USER is
 				** introduced... --msa
 				*/
-	struct	User	*nextu, *prevu;
 	aClient	*bcptr;
 	char	username[USERLEN+1];
 	char	host[HOSTLEN+1];
@@ -371,7 +372,6 @@ struct	User	{
 
 struct	Server	{
 	anUser	*user;		/* who activated this connection */
-	anUser  *userlist;      /* first user on this server in the user list*/
 	char	*up;	/* uplink for this server */
 	aConfItem *nline;	/* N-line pointer for this server */
 	int	version;        /* version id for local client */
@@ -640,8 +640,14 @@ struct Channel	{
 */
 #define       IsMember(u, c)          (u && (u)->user && \
 		       find_channel_link((u)->user->channel, c) ? 1 : 0)
-#define	IsChannelName(n)	((n) && (*(n) == '#' || *(n) == '&' || \
+#ifdef CLIENT_COMPILE
+# define	IsChannelName(n)	((n) && (*(n) == '#' || *(n) == '&' ||\
 					*(n) == '+' || *(n) == '!'))
+#else
+# define	IsChannelName(n)	((n) && (*(n) == '#' || *(n) == '&' ||\
+					*(n) == '+' || \
+					(*(n) == '!' && cid_ok(n))))
+#endif
 #define	IsQuiet(x)		((x)->mode.mode & MODE_QUIET)
 #define	UseModes(n)		((n) && (*(n) == '#' || *(n) == '&' || \
 					 *(n) == '!'))
@@ -658,6 +664,12 @@ struct Channel	{
 #define	MyOper(x)			(MyConnect(x) && IsOper(x))
 #define	MyService(x)			(MyConnect(x) && IsService(x))
 #define	ME	me.name
+
+#define	GotDependantClient(x)	(x->prev &&				\
+		 		 ((IsRegisteredUser(x->prev) &&		\
+				  x->prev->user->servp == x->serv) ||	\
+				  (IsService(x->prev) &&		\
+				  x->prev->service->servp == x->serv)))
 
 typedef	struct	{
 	u_long	is_user[2];	/* users, non[0] invis and invis[1] */
@@ -736,6 +748,7 @@ typedef	struct	{
 #define	SV_NCHAN	0x0008	/* server knows new channels -????name */
 				/* ! SV_NJOIN implies ! SV_NCHAN */
 #define	SV_2_10		(SV_29|SV_NJOIN|SV_NMODE|SV_NCHAN)
+#define	SV_OLDSQUIT	0x1000	/* server uses OLD SQUIT logic */
 
 /* used for sendto_flag */
 
@@ -781,6 +794,16 @@ typedef	struct	{
 #define EXITC_RLINE	'r'	/* R-lined */
 #define EXITC_REF	'R'	/* Refused */
 #define EXITC_AREF	'U'	/* Unauthorized by iauth */
+#define EXITC_AREFQ	'u'	/* Unauthorized by iauth, be quiet */
+#define EXITC_AUTHFAIL	'A'	/* Authentication failure (iauth problem) */
+#define EXITC_AUTHTOUT	'a'	/* Authentication time out */
+
+/* eXternal authentication slave OPTions */
+#define	XOPT_REQUIRED	0x01	/* require authentication be done by iauth */
+#define	XOPT_NOTIMEOUT	0x02	/* disallow iauth time outs */
+#define XOPT_EXTWAIT	0x10	/* extend registration ping timeout */
+#define XOPT_EARLYPARSE	0x20	/* allow early parsing and send USER/PASS
+				   information to iauth */
 
 /* misc defines */
 

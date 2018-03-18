@@ -35,7 +35,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.52 1999/02/03 22:12:34 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.73 1999/07/23 17:15:14 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -226,14 +226,15 @@ int	port;
 	if (port)
 	    {
 		server.SIN_FAMILY = AFINET;
-		if (!ip || !isdigit(*ip))
 #ifdef INET6
+		if (!ip || (!isxdigit(*ip) && *ip != ':'))
 			server.sin6_addr = in6addr_any;
 		else
 			if(!inet_pton(AF_INET6, ip, server.sin6_addr.s6_addr))
 				bcopy(minus_one, server.sin6_addr.s6_addr,
 				      IN6ADDRSZ);
 #else
+		if (!ip || !isdigit(*ip))
 			server.sin_addr.s_addr = INADDR_ANY;
 		else
 			server.sin_addr.s_addr = inetaddr(ip);
@@ -439,21 +440,20 @@ int rcvdsig;
 		return;
 	if (adfd >= 0)
 	    {
-		sendto_flag(SCH_AUTH,
-			    "iauth is already running, restart aborted");
+		if (rcvdsig)
+			sendto_flag(SCH_AUTH,
+			    "iauth is already running, restart canceled");
 		return;
 	    }
-	read_iauth(); /* to reset olen */
-	if ((time(NULL) - last) > 300 || rcvdsig)
+	if ((time(NULL) - last) > 90 || rcvdsig)
 	    {
 		sendto_flag(SCH_AUTH, "Starting iauth...");
 		last = time(NULL);
+		read_iauth(); /* to reset olen */
+		iauth_spawn += 1;
 	    }
 	else
-	    {
-		sendto_flag(SCH_AUTH, "Not restarting iauth.");
 		return;
-	    }
 	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sp) < 0)
 	    {
 		sendto_flag(SCH_ERROR, "socketpair() failed!");
@@ -479,7 +479,7 @@ int rcvdsig;
 			(void)dup2(sp[1], 0);
 			close(sp[1]);
 		    }
-		if (execl(APATH, APATH, NULL) < 0)
+		if (execl(IAUTH_PATH, IAUTH, NULL) < 0)
 			_exit(-1); /* should really not happen.. */
 	default:
 		close(sp[1]);
@@ -615,26 +615,24 @@ init_dgram:
 
 void	write_pidfile()
 {
-#ifdef IRCD_PIDFILE
 	int fd;
 	char buff[20];
-	(void)truncate(IRCD_PIDFILE, 0);
-	if ((fd = open(IRCD_PIDFILE, O_CREAT|O_WRONLY, 0600))>=0)
+	(void)truncate(IRCDPID_PATH, 0);
+	if ((fd = open(IRCDPID_PATH, O_CREAT|O_WRONLY, 0600))>=0)
 	    {
 		bzero(buff, sizeof(buff));
 		(void)sprintf(buff,"%5d\n", (int)getpid());
 		if (write(fd, buff, strlen(buff)) == -1)
 			Debug((DEBUG_NOTICE,"Error writing to pid file %s",
-			      IRCD_PIDFILE));
+			      IRCDPID_PATH));
 		(void)close(fd);
 		return;
 	    }
 # ifdef	DEBUGMODE
 	else
 		Debug((DEBUG_NOTICE,"Error opening pid file %s",
-			IRCD_PIDFILE));
+			IRCDPID_PATH));
 # endif
-#endif
 }
 		
 /*
@@ -682,8 +680,7 @@ Reg	char	*sockn;
 	if (inetnetof(sk.SIN_ADDR) == IN_LOOPBACKNET)
 #endif
 	    {
-		cptr->hostp = NULL;
-		strncpyzt(sockn, me.sockhost, HOSTLEN);
+		cptr->hostp = me.hostp;
 	    }
 	bcopy((char *)&sk.SIN_ADDR, (char *)&cptr->ip, sizeof(struct IN_ADDR));
 	cptr->port = (int)(ntohs(sk.SIN_PORT));
@@ -705,7 +702,6 @@ Reg	aClient	*cptr;
 	Reg	struct	hostent *hp = NULL;
 	Reg	int	i;
  
-	ClearAccess(cptr);
 #ifdef INET6
 	Debug((DEBUG_DNS, "ch_cl: check access for %s[%s]",
 		cptr->name, inet_ntop(AF_INET6, (char *)&cptr->ip, mydummy,
@@ -723,8 +719,10 @@ Reg	aClient	*cptr;
 	/*
 	 * Verify that the host to ip mapping is correct both ways and that
 	 * the ip#(s) for the socket is listed for the host.
+	 * We shouldn't check it for localhost, because hp is fake in that
+	 * case. -Toor
 	 */
-	if (hp)
+	if (hp && (hp != me.hostp))
 	    {
 		for (i = 0; hp->h_addr_list[i]; i++)
 			if (!bcmp(hp->h_addr_list[i], (char *)&cptr->ip,
@@ -858,7 +856,6 @@ aClient	*cptr;
 			** get us here and we can't interrupt that very
 			** well.
 			*/
-			ClearAccess(cptr);
 			lin.value.aconf = aconf;
 			lin.flags = ASYNC_CONF;
 			nextdnscheck = 1;
@@ -885,7 +882,6 @@ int	estab;
 	Link	*lp = cptr->confs;
 	int	i;
 
-	ClearAccess(cptr);
 	if (check_init(cptr, sockname))
 		return -2;
 
@@ -1384,9 +1380,21 @@ aClient	*cptr;
 	opt = 8192;
 	if (SETSOCKOPT(fd, SOL_SOCKET, SO_SNDBUF, &opt, opt) < 0)
 		report_error("setsockopt(SO_SNDBUF) %s:%s", cptr);
+# ifdef	SO_SNDLOWAT
+	/*
+	 * Setting the low water mark should improve performence by avoiding
+	 * early returns from select()/poll().  It shouldn't delay sending
+	 * data, provided that io_loop() combines read_message() and
+	 * flush_fdary/connections() calls properly. -kalt
+	 * This call isn't always implemented, even when defined.. so be quiet
+	 * about errors. -kalt
+	 */
+	opt = 8192;
+	SETSOCKOPT(fd, SOL_SOCKET, SO_SNDLOWAT, &opt, opt);
+# endif
 #endif
 #if defined(IP_OPTIONS) && defined(IPPROTO_IP) && !defined(AIX) && \
-    !defined(SUN_GSO_BUG)
+    !defined(SUN_GSO_BUG) && !defined(INET6)
 	/*
 	 * Mainly to turn off and alert us to source routing, here.
 	 * Method borrowed from Wietse Venema's TCP wrapper.
@@ -1507,7 +1515,11 @@ aClient *cptr;
 	    }
 	/* Now add new item to the list */
 	blptr = (struct abacklog *) MyMalloc(sizeof(struct abacklog));
+#ifdef INET6
+	bcopy(cptr->ip.s6_addr, blptr->ip.s6_addr, IN6ADDRSZ);
+#else
 	blptr->ip.s_addr = cptr->ip.s_addr;
+#endif
 	blptr->PT = timeofday;
 	blptr->next = backlog;
 	backlog = blptr;
@@ -1516,7 +1528,11 @@ aClient *cptr;
 	blptr = backlog;
 	while (blptr != NULL)
 	    {
+#ifdef INET6
+		if (bcmp(blptr->ip.s6_addr, cptr->ip.s6_addr, IN6ADDRSZ) == 0)
+#else
 		if (blptr->ip.s_addr == cptr->ip.s_addr)
+#endif
 			count++;
 		blptr = blptr->next;
 	    }
@@ -1608,6 +1624,15 @@ add_con_refuse:
 			    (acptr->hostp) ? acptr->hostp->h_name :
 			    acptr->sockhost);
 		del_queries((char *)acptr);
+# ifdef INET6
+		(void)sendto(acptr->fd,
+			     "ERROR :Too rapid connections from your host\r\n",
+			     46, 0, 0, 0);
+# else
+		(void)send(acptr->fd,
+			   "ERROR :Too rapid connections from your host\r\n",
+			   46, 0);
+# endif
 		goto add_con_refuse;
 	    }
 #endif
@@ -1634,6 +1659,8 @@ add_con_refuse:
 				     acptr->hostp->h_aliases[i++]);
 		if (acptr->hostp->h_name)
 			sendto_iauth("%d N %s",acptr->fd,acptr->hostp->h_name);
+		else if (acptr->hostp->h_aliases[0])
+			sendto_iauth("%d n", acptr->fd);
 	    }
 #endif
 	return acptr;
@@ -1679,10 +1706,77 @@ int	fd;
 	add_client_to_list(acptr);
 	set_non_blocking(acptr->fd, acptr);
 	(void)set_sock_opts(acptr->fd, acptr);
-	SetAccess(acptr);
 	return;
 }
 #endif
+
+/*
+** read_listener
+**
+** Accept incoming connections, extracted from read_message() 98/12 -kalt
+** Up to 10 connections will be accepted, unless SLOW_ACCEPT is defined.
+*/
+static void
+read_listener(cptr)
+aClient *cptr;
+{
+	int fdnew, max = 10;
+
+#if defined(SLOW_ACCEPT)
+	max = 1;
+#endif
+	while (max--)
+	    {
+		/*
+		** There may be many reasons for error return, but in otherwise
+		** correctly working environment the probable cause is running
+		** out of file descriptors (EMFILE, ENFILE or others?). The
+		** man pages for accept don't seem to list these as possible,
+		** although it's obvious that it may happen here.
+		** Thus no specific errors are tested at this point, just
+		** assume that connections cannot be accepted until some old
+		** is closed first.
+		*/
+		if ((fdnew = accept(cptr->fd, NULL, NULL)) < 0)
+		    {
+			if (errno != EWOULDBLOCK)
+				report_error("Cannot accept connections %s:%s",
+					     cptr);
+			break;
+		    }
+		ircstp->is_ac++;
+		if (fdnew >= MAXCLIENTS)
+		    {
+			ircstp->is_ref++;
+			sendto_flag(SCH_ERROR, "All connections in use. (%s)",
+				    get_client_name(cptr, TRUE));
+			find_bounce(NULL, 0, fdnew);
+#ifdef INET6
+			(void)sendto(fdnew,
+				     "ERROR :All connections in use\r\n",
+				     32, 0, 0, 0);
+#else
+			(void)send(fdnew, "ERROR :All connections in use\r\n",
+				   32, 0);
+#endif
+			(void)close(fdnew);
+			continue;
+		    }
+		/*
+		 * Use of add_connection (which never fails :) meLazy
+		 * Never say never. MrMurphy visited here. -Vesa
+		 */
+#ifdef	UNIXPORT
+		if (IsUnixSocket(cptr))
+			add_unixconnection(cptr, fdnew);
+		else
+#endif
+			if (!add_connection(cptr, fdnew))
+				continue;
+		nextping = timeofday; /* isn't this abusive? -kalt */
+		istat.is_unknown++;
+	    }
+}
 
 /*
 ** client_packet
@@ -1811,21 +1905,6 @@ int	msg_ready;
 			done = dopacket(cptr, readbuf, length);
 			if (done && done != 2)
 				return done;
-#ifdef ZIP_LINKS
-			/*
-			** compressed data received cannot always be
-			** entirely uncompressed in one step (because of
-			** buffer sizes); this makes sure to uncompress
-			** all that was received.
-			*/
-			if (cptr->flags & FLAGS_ZIP)
-				while (cptr->zip->in->avail_in != 0)
-				    {
-					done = dopacket(cptr, readbuf, 0);
-					if (done && done != 2)
-						return done;
-				    }
-#endif
 		    }
 	    }
 	else
@@ -1856,11 +1935,13 @@ int	msg_ready;
  * processed. Also check for connections with data queued and whether we can
  * write it out.
  */
-int	read_message(delay, fdp)
+int	read_message(delay, fdp, ro)
 time_t	delay; /* Don't ever use ZERO here, unless you mean to poll and then
 		* you have to have sleep/wait somewhere else in the code.--msa
+		* Actually, ZERO is NOT ZERO anymore.. see below -kalt
 		*/
 FdAry	*fdp;
+int	ro;
 {
 #if ! USE_POLL
 # define SET_READ_EVENT( thisfd )	FD_SET( thisfd, &read_set)
@@ -1905,12 +1986,11 @@ FdAry	*fdp;
 	int	   nbr_pfds = 0;
 #endif
 
-	Reg	aClient	*cptr;
-	Reg	int	nfds;
+	aClient	*cptr;
+	int	nfds, ret = 0;
 	struct	timeval	wait;
 	time_t	delay2 = delay;
-	u_long	usec = 0;
-	int	res, length, fd, i, fdnew;
+	int	res, length, fd, i;
 	int	auth;
 
 	for (res = 0;;)
@@ -1941,6 +2021,7 @@ FdAry	*fdp;
 			Debug((DEBUG_L11, "fd %d cptr %#x %d %#x %s",
 				fd, cptr, cptr->status, cptr->flags,
 				get_client_name(cptr,TRUE)));
+			/* authentication fd's */
 			if (DoingAuth(cptr))
 			    {
 				auth++;
@@ -1956,48 +2037,66 @@ FdAry	*fdp;
 					highfd = cptr->authfd;
 #endif
 			    }
+			/*
+			** if any of these is true, data won't be parsed
+			** so no need to check for anything!
+			*/
+#if defined(USE_IAUTH)
 			if (DoingDNS(cptr) || DoingAuth(cptr) ||
-			    DoingXAuth(cptr))
+			    WaitingXAuth(cptr) ||
+			    (DoingXAuth(cptr) &&
+			     !(iauth_options & XOPT_EARLYPARSE)))
+#else
+			if (DoingDNS(cptr) || DoingAuth(cptr))
+#endif
 				continue;
 #if ! USE_POLL
 			if (fd > highfd)
 				highfd = fd;
 #endif
+			/*
+			** Checking for new connections is only done up to
+			** once per second.
+			*/
 			if (IsListening(cptr))
 			    {
-#ifndef	SLOW_ACCEPT
-					if (IsUnixSocket(cptr))
-					    {
-#endif
-						if ((timeofday > cptr->lasttime + 2))
-					    {
-						SET_READ_EVENT( fd );
-					    }
-					else if (delay2 > 2)
-						delay2 = 2;
-#ifndef	SLOW_ACCEPT
+				if (timeofday > cptr->lasttime + 1 && ro == 0)
+				    {
+					SET_READ_EVENT( fd );
 				    }
-				else
-					SET_READ_EVENT( fd );
-#endif
-			    }
-			else
-			    {
-				if (DBufLength(&cptr->recvQ) && delay2 > 2)
+				else if (delay2 > 1)
 					delay2 = 1;
-				if (DBufLength(&cptr->recvQ) < 4088)
-					SET_READ_EVENT( fd );
+				continue;
 			    }
 			
+			/*
+			** This is very approximate, it should take
+			** cptr->since into account. -kalt
+			*/
+			if (DBufLength(&cptr->recvQ) && delay2 > 2)
+				delay2 = 1;
+
+			if (IsRegisteredUser(cptr))
+			    {
+				if (cptr->since - timeofday < MAXPENALTY+1)
+					SET_READ_EVENT( fd );
+			    }
+			else if (DBufLength(&cptr->recvQ) < 4088)
+				SET_READ_EVENT( fd );
+
+			/*
+			** If we have anything in the sendQ, check if there is
+			** room to write data.
+			*/
 			if (DBufLength(&cptr->sendQ) || IsConnecting(cptr) ||
 #ifdef	ZIP_LINKS
-			    IsReconnect(cptr) || ((cptr->flags & FLAGS_ZIP) &&
-						  (cptr->zip->outcount > 0))
-#else
-			    IsReconnect(cptr)
+			    ((cptr->flags & FLAGS_ZIP) &&
+			     (cptr->zip->outcount > 0)) ||
 #endif
-			    ) /* for emacs auto-indentation */
-				SET_WRITE_EVENT( fd );
+			    IsReconnect(cptr))
+				if (IsServer(cptr) || IsConnecting(cptr) ||
+				    ro == 0)
+					SET_WRITE_EVENT( fd );
 		    }
 
 		if (udpfd >= 0)
@@ -2032,14 +2131,14 @@ FdAry	*fdp;
 # endif			
 		    }
 #endif
-		Debug((DEBUG_L11, "udpfd %d resfd %d adfd %s", udpfd, resfd,
+		Debug((DEBUG_L11, "udpfd %d resfd %d adfd %d", udpfd, resfd,
 		       adfd));
 #if ! USE_POLL
 		Debug((DEBUG_L11, "highfd %d", highfd));
 #endif
 		
 		wait.tv_sec = MIN(delay2, delay);
-		wait.tv_usec = usec;
+		wait.tv_usec = (delay == 0) ? 200000 : 0;
 #if ! USE_POLL
 		nfds = select(highfd + 1, (SELECT_FDSET_TYPE *)&read_set,
 			      (SELECT_FDSET_TYPE *)&write_set, 0, &wait);
@@ -2047,6 +2146,7 @@ FdAry	*fdp;
 		nfds = poll( poll_fdarray, nbr_pfds,
 			     wait.tv_sec * 1000 + wait.tv_usec/1000 );
 #endif
+		ret = nfds;
 		if (nfds == -1 && errno == EINTR)
 			return -1;
 		else if (nfds >= 0)
@@ -2058,11 +2158,12 @@ FdAry	*fdp;
 #endif
 		res++;
 		if (res > 5)
-			restart("too many select errors");
+			restart("too many select()/poll() errors");
 		sleep(10);
 		timeofday = time(NULL);
 	    } /* for(res=0;;) */
 	
+	timeofday = time(NULL);
 	if (nfds > 0 &&
 #if ! USE_POLL
 	    resfd >= 0 &&
@@ -2071,9 +2172,9 @@ FdAry	*fdp;
 #endif
 	    TST_READ_EVENT(resfd))
 	    {
-		do_dns_async();
-		nfds--;
 		CLR_READ_EVENT(resfd);
+		nfds--;
+		do_dns_async();
 	    }
 	if (nfds > 0 &&
 #if ! USE_POLL
@@ -2083,9 +2184,9 @@ FdAry	*fdp;
 #endif
 	    TST_READ_EVENT(udpfd))
 	    {
-		polludp();
-		nfds--;
 		CLR_READ_EVENT(udpfd);
+		nfds--;
+		polludp();
 	    }
 #if defined(USE_IAUTH)
 	if (nfds > 0 &&
@@ -2096,9 +2197,9 @@ FdAry	*fdp;
 # endif
 	    TST_READ_EVENT(adfd))
 	    {
-		read_iauth();
-		nfds--;
 		CLR_READ_EVENT(adfd);
+		nfds--;
+		read_iauth();
 	    }
 #endif
 
@@ -2153,56 +2254,7 @@ FdAry	*fdp;
 		    {
 			CLR_READ_EVENT(fd);
 			cptr->lasttime = timeofday;
-			/*
-			** There may be many reasons for error return, but
-			** in otherwise correctly working environment the
-			** probable cause is running out of file descriptors
-			** (EMFILE, ENFILE or others?). The man pages for
-			** accept don't seem to list these as possible,
-			** although it's obvious that it may happen here.
-			** Thus no specific errors are tested at this
-			** point, just assume that connections cannot
-			** be accepted until some old is closed first.
-			*/
-			if ((fdnew = accept(fd, NULL, NULL)) < 0)
-			    {
-				report_error("Cannot accept connections %s:%s",
-					     cptr);
-				continue;
-			    }
-			ircstp->is_ac++;
-			if (fdnew >= MAXCLIENTS)
-			    {
-				ircstp->is_ref++;
-				sendto_flag(SCH_ERROR,
-					    "All connections in use. (%s)",
-					    get_client_name(cptr, TRUE));
-				find_bounce(NULL, 0, fdnew);
-#ifdef INET6
-				(void)sendto(fdnew,
-					   "ERROR :All connections in use\r\n",
-					   32, 0, 0, 0);
-#else
-				(void)send(fdnew,
-					   "ERROR :All connections in use\r\n",
-					   32, 0);
-#endif
-				(void)close(fdnew);
-				continue;
-			    }
-			/*
-			 * Use of add_connection (which never fails :) meLazy
-			 * Never say never. MrMurphy visited here. -Vesa
-			 */
-#ifdef	UNIXPORT
-			if (IsUnixSocket(cptr))
-				add_unixconnection(cptr, fdnew);
-			else
-#endif
-				if (!add_connection(cptr, fdnew))
-					continue;
-			nextping = timeofday;
-			istat.is_unknown++;
+			read_listener(cptr);
 			continue;
 		    }
 		if (IsMe(cptr))
@@ -2222,10 +2274,6 @@ FdAry	*fdp;
 deadsocket:
 				if (TST_READ_EVENT(fd))
 					CLR_READ_EVENT(fd);
-				if (cptr->exitc =! EXITC_UNDEF)
-					sendto_flag(SCH_DEBUG,
-						    "EXITC overwritten: %c",
-						    cptr->exitc);
 				cptr->exitc = EXITC_ERROR;
 				(void)exit_client(cptr, cptr, &me,
 						  strerror(get_sockerr(cptr)));
@@ -2233,11 +2281,11 @@ deadsocket:
 			    }
 		    }
 		length = 1;	/* for fall through case */
-		if (!NoNewLine(cptr) || TST_READ_EVENT(fd)) {
-		    if (!DoingAuth(cptr))
-			    length = read_packet(cptr,
-						 TST_READ_EVENT(fd));
-		}
+		if (!NoNewLine(cptr) || TST_READ_EVENT(fd))
+		    {
+			if (!DoingAuth(cptr))
+				length = read_packet(cptr, TST_READ_EVENT(fd));
+		    }
 		readcalls++;
 		if (length == FLUSH_BUFFER)
 			continue;
@@ -2301,7 +2349,7 @@ deadsocket:
 				  "EOF From client" :
 				  strerror(get_sockerr(cptr)));
 	    } /* for(i) */
-	return 0;
+	return ret;
 }
 
 /*
@@ -3143,8 +3191,6 @@ static	void	do_dns_async()
 			    {
 				del_queries((char *)cptr);
 				ClearDNS(cptr);
-				if (!DoingAuth(cptr))
-					SetAccess(cptr);
 				cptr->hostp = hp;
 #if defined(USE_IAUTH)
 				if (hp)
@@ -3158,7 +3204,13 @@ static	void	do_dns_async()
 					if (hp->h_name)
 						sendto_iauth("%d N %s",
 							cptr->fd, hp->h_name);
+					else if (hp->h_aliases[0])
+						sendto_iauth("%d n", cptr->fd);
 				    }
+				else
+					sendto_iauth("%d d", cptr->fd);
+				if (iauth_options & XOPT_EXTWAIT)
+					cptr->lasttime = timeofday;
 #endif
 			    }
 			break;

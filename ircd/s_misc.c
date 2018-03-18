@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.26 1999/01/13 02:14:36 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_misc.c,v 1.30 1999/07/21 22:57:39 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -470,16 +470,14 @@ char	*comment;	/* Reason for the exit */
 			(void)strcat(comment1, sptr->name);
 
 			/* This will quit all the *users*, without checking the
-			** whole list of clients. I like it, unfortunately,
-			** there's more below..
+			** whole list of clients.
 			*/
 			for (asptr = svrtop; asptr; asptr = (aServer *)next)
 			    {
 				next = (aClient *)asptr->nexts;
-				if ((asptr->userlist == NULL)
-				    || (asptr->bcptr == NULL)
-				    || (asptr->bcptr->from != sptr
-					&& asptr->bcptr != sptr))
+				if ((asptr->bcptr == NULL) ||
+				    (asptr->bcptr->from != sptr
+				     && asptr->bcptr != sptr))
 					continue;
 				/*
 			        ** This version doesn't need QUITs to be
@@ -491,70 +489,14 @@ char	*comment;	/* Reason for the exit */
 					flags |= FLAGS_SPLIT | FLAGS_HIDDEN;
 				else
 					flags |= FLAGS_SPLIT;
-				do
+				while (GotDependantClient(asptr->bcptr))
 				    {
-					acptr = asptr->userlist->bcptr;
+					acptr = asptr->bcptr->prev;
 					acptr->flags |= flags;
 					exit_one_client(NULL, acptr, &me,
 							comment1);
 				    }
-				while (asptr->userlist);
 			    }
-			/* Here is more..
-			** I don't know what use this can have for now, but
-			** the above breaks the old code, which I just pasted
-			** below.
-			** Nothing should happen here, unless there is another
-			** remote entity than "user" (and servers) depending
-			** on remote servers: services,it would be much smarter
-			** to only check services instead of wasting CPU - krys
-			*/
-#if 0
-			for (acptr = client; acptr; acptr = next)
-			    {
-				next = acptr->next;
-				if (!IsServer(acptr) && acptr->from == sptr)
-				    {
-					/*
-					** Let's see if things are ever wrong.
-					** Second step would be: finally change
-					** this loop to go through the services
-					** list. -krys
-					*/
-					if (!IsService(acptr))
-						sendto_flag(SCH_ERROR,
-			    "lists seem corrupted: %s %#x %#x %#x (%s)",
-							    acptr->name,
-							    acptr->user,
-							    acptr->serv,
-							    acptr->service,
-							    sptr->name);
-					exit_one_client(NULL, acptr, &me,
-							comment1);
-				    }
-			    }
-#else
-			/*
-			** I'm now trying to put more comments in this function
-			** than code.  The above could be re-enabled some time
-			** for curiosity/debugging.
-			** I've only heard of one instance when the above
-			** notice showed up, and it was due to a bug, now
-			** fixed.
-			** With 2.9 combined NICK protocol, it should never
-			** happen, as a NICK is immediately associated to a
-			** server.
-			** Avalon made me do it. ;) -krys
-			*/
-			for (asvptr = svctop; asvptr; asvptr =(aService *)next)
-			    {
-				next = (aClient *)asvptr->nexts;
-				if ((acptr = asvptr->bcptr) && 
-				    acptr->from == sptr)
-					exit_one_client(NULL, acptr, &me,
-                                                        comment1);
-			    }
-#endif
 			/*
 			** Second SQUIT all servers behind this link
 			*/
@@ -573,7 +515,7 @@ char	*comment;	/* Reason for the exit */
 		    } /* If (IsServer(sptr)) */
 	    } /* if (MyConnect(sptr) || (sptr->flags & FLAGS_HELD)) */
 
- 	if (IsServer(sptr) && sptr->serv->userlist)
+ 	if (IsServer(sptr) && GotDependantClient(sptr))
  	{
  		/*
 		** generate QUITs locally when receiving a SQUIT
@@ -593,13 +535,12 @@ char	*comment;	/* Reason for the exit */
  		(void)strcat(comment1, " ");
  		(void)strcat(comment1, sptr->name);
 
- 		do
+		while (GotDependantClient(sptr))
  		{
- 			acptr = sptr->serv->userlist->bcptr;
+ 			acptr = sptr->prev;
  			acptr->flags |= flags;
 			exit_one_client(cptr, acptr, &me, comment1);
  		}
- 		while (sptr->serv->userlist);
  	}
  	
 	/*
@@ -795,6 +736,9 @@ char	*comment;
 #endif
 						 is_chan_op(sptr, lp->value.chptr))
 						lp->value.chptr->history = timeofday + DELAYCHASETIMELIMIT;
+				if (IsAnonymous(lp->value.chptr) &&
+				    !IsQuiet(lp->value.chptr))
+					sendto_channel_butserv(lp->value.chptr, sptr, ":%s PART %s :None", sptr->name, lp->value.chptr->chname);
 				remove_user_from_channel(sptr,lp->value.chptr);
 			    }
 
@@ -808,7 +752,7 @@ char	*comment;
 			add_history(sptr, (sptr->flags & FLAGS_QUIT) ? 
 				    &me : NULL);
 #else
-			add_history(sptr, NULL);
+			add_history(sptr, (sptr == cptr) ? &me : NULL);
 #endif
 			off_history(sptr);
 		    }

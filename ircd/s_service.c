@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_service.c,v 1.26 1999/01/14 01:19:35 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_service.c,v 1.30 1999/07/02 16:49:37 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -388,7 +388,7 @@ char	*parv[];
 		if (!do_nick_name(parv[1], 0))
 		    {
 			sendto_one(sptr, err_str(ERR_ERRONEUSNICKNAME,
-				   parv[0]));
+				   parv[0]), parv[1]);
 			return 1;
 		    }
 		if (strlen(parv[1]) + strlen(server) + 2 >= (size_t) HOSTLEN)
@@ -455,6 +455,7 @@ char	*parv[];
 	svc->wants = 0;
 	svc->type = type;
 	sptr->hopcount = metric;
+	reorder_client_in_list(sptr);
 	(void)add_to_client_hash_table(sptr->name, sptr);
 
 #ifdef	USE_SERVICES
@@ -639,7 +640,7 @@ char	*parv[];
 		    }
 	    }
 	
-	if (burst & (SERVICE_WANT_CHANNEL|SERVICE_WANT_VCHANNEL|SERVICE_WANT_MODE))
+	if (burst & (SERVICE_WANT_CHANNEL|SERVICE_WANT_VCHANNEL|SERVICE_WANT_MODE|SERVICE_WANT_TOPIC))
 	    {
 		char    modebuf[MODEBUFLEN], parabuf[MODEBUFLEN];
 		aChannel	*chptr;
@@ -659,6 +660,9 @@ char	*parv[];
 				sendto_one(sptr, "MODE %s %s", chptr->chname,
 					   modebuf);
 			    }
+			if ((burst & SERVICE_WANT_TOPIC) && *chptr->topic)
+				sendto_one(sptr, "TOPIC %s :%s",
+					   chptr->chname, chptr->topic);
 		    }
 	    }
 	/* cptr->flags ^= FLAGS_CBURST; */

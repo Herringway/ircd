@@ -4,9 +4,9 @@
 
 <title>Installing IRC - The Internet Relay Chat Program
 <author>SGML version by Christophe Kalt
-<date>$Id: INSTALL.sgml,v 1.33 1999/01/28 23:53:02 kalt Exp $
+<date>$Id: INSTALL.sgml,v 1.38 1999/08/13 17:19:52 kalt Exp $
 <abstract>
-This document describes how to install, and configure IRC 2.10.2.
+This document describes how to install, and configure IRC 2.10.3.
 </abstract>
 
 <sect>Installing IRC.
@@ -27,10 +27,12 @@ to /usr/local
 <tag/--sbindir=DIR/ changes the default directory where the
 system admin executable files will go. It is important to
 set this properly. (default is prefix/sbin)
-<tag/--libdir=DIR/ changes the default directory where most
-irc files will go. (default is prefix/lib/ircd)
 <tag/--logdir=DIR/ changes the default directory where the
-irc log files will go. (default is prefix/lib/ircd)
+irc log files will go. (default is prefix/var/log/ircd)
+<tag/--sysconfdir=DIR/ changes the default directory where
+the irc server configuration files will go. (default is prefix/etc)
+<tag/--localstatedir=DIR/ changes the default directory
+where the irc server state files will go. (default is prefix/var/run)
 <tag/--resconf=FILE/ defines the file to be used by ircd to
 initialize its resolver.  (default is /etc/resolv.conf)
 <tag/--zlib-include=DIR/ specifies in which directory the
@@ -48,17 +50,16 @@ for this you also need to define ZIP_LINKS (see section below).
 <tag/--without-zlib/ tells ``configure'' not to look for the zlib.
 Defining this will keep you from using server link compression.
 <tag/--enable-ip6/ Enable IPv6 support (See notes below)
+<tag/--enable-dsm/ Enable Dynamically Shared Modules support for iauth
 </descrip>
 
 <sect1>Notes for Cygwin32 users
 <p>
-The 2.9.5 release compiles properly on W32 systems which
-have the GNU-Win32 environment (<url
+The daemon of 2.10.3 release compiles properly on W32
+systems which have the GNU-Win32 environment (<url
 url="http://www.cygnus.com/misc/gnu-win32/">) setup.  At the
-time of the release, tests were made using the version b18
-of the Cygwin32 library with the ``coolview'' patch from
-Sergey Okhapkin.  (This patch should be rolled in the next
-beta)
+time of the release, tests were made using the version b20.1
+of the Cygwin32 library.
 <p>
 When compiling on such system, you want to make sure that
 you have carefully followed the Cygwin32 installation
@@ -71,6 +72,11 @@ Also, the IRC server needs a <bf>resolv.conf</bf> file in
 order to initialize the resolver.  This file can be anywhere
 (see configure options), and is typically in <bf>/etc</bf>
 on UNIX systems.
+<p>
+Finally, iauth is automatically disabled.  Even though the
+iauth program compiles properly, extra work is required to
+have a working communication channel between the IRC server
+and the iauth program.
 
 <sect1>Notes concerning IPv6 support
 <p>
@@ -79,7 +85,7 @@ server internal resolver.  It relies on the name servers
 defined in ``/etc/resolv.conf'' to be IPv4 addresses.
 <p>
 This version was tested on the following IPv6 systems:
-Digital Unix, Linux, NetBSD+INRIA.
+BSD/OS+KAME, Digital Unix, FreeBSD+KAME, Linux, NetBSD+INRIA.
 <p>
 Because IPv6 numeric addresses contain ``:'' characters,
 <bf>the separator for the server configuration file was
@@ -1157,7 +1163,8 @@ connecting to you based on their version and on compile time
 options.
 <tag/Format/<verb>V:&lt;Version Mask&gt;:&lt;Flags&gt;:&lt;Server Mask&gt;::</verb>
 <tag/Version Mask/ The matching version number strings will be rejected.
-<tag/Flags/ The matching version flags strings will be rejected.
+<tag/Flags/ If any flag specified in this field is found in
+the peer's flags string, it will be rejected.
 <tag/Server Mask/ This field is used to match server names.
 The V line will be used for servers matching the mask given
 in this field.
@@ -1169,20 +1176,20 @@ identification.  This implementation uses the id
 <p>
 Disallows any ``IRC'' server which version is 2.10.1* to connect.
 <p>
-V:IRC/021001*:IRC/*D*:*::
+V:IRC/021001*:IRC/D:*::
 <p>
 Disallows any ``IRC'' server which version is 2.10.1* or
 which has been compiled with DEBUGMODE defined to connect.
 <p>
-V:*/0209*::*::
+V:*/0209*::::
 <p>
 Disallows any server using the 2.9 protocol to connect.
 <tag/Note/  It is possible to have and use multiple V-lines
 for the one server mask.
 <p>
-V:IRC/021001*:*:*::
+V:IRC/021001*::*::
 <p>
-V:IRC/021002*:*:*::
+V:IRC/021002*::*::
 <p>
 is allowed.
 <tag/Protocol Version/ Only the 4 first digit of the

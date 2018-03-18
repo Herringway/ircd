@@ -1,5 +1,5 @@
-.\" @(#)$Id: iauth.conf.5,v 1.5 1999/01/13 02:32:40 kalt Exp $
-.TH IAUTH.CONF 5 "$Date: 1999/01/13 02:32:40 $"
+.\" @(#)$Id: iauth.conf.5,v 1.16 1999/07/04 22:09:09 kalt Exp $
+.TH IAUTH.CONF 5 "$Date: 1999/07/04 22:09:09 $"
 .SH NAME
 iauth.conf \- The Internet Relay Chat Authentication Configuration File
 .SH DESCRIPTION
@@ -10,8 +10,9 @@ particular connection.  The list is ordered, which means that the first
 module to successfully authenticate a connection will be the last to be
 tried.
 
-The file is divided in sections, each section specifies a module with
-eventual options using the following format:
+The file is divided in sections, the first section is used for iauth
+options, each subsequent section specifies a module with eventual options
+using the following format:
 
 .RS
 .nf
@@ -19,6 +20,7 @@ module\ \fImodule-name\fP
 [TAB]option = \fIstring\fP
 [TAB]host = \fIhost-name\fP
 [TAB]ip = \fIip-address\fP
+[TAB]timeout = \fIvalue\fP
 
 .fi
 .RE
@@ -30,11 +32,39 @@ to find out if a module accepts any option.
 
 If \fIhost-name\fP and \fIip-address\fP fields are specified, then the
 module will only be used for connections matching one of the fields given
-in the configuration.  If none are specified, then the module will always
-be used.
+in the configuration.  An entry prefixed with the character ! indicates a
+negative match.  IP addresses are checked first.
+
+If no host nor ip entry is specified, then the module will always be used.
 
 When writing a configuration file, one should \fBalways\fP verify the
 syntax using the \fIiauth\fP program to avoid later problems.
+.SH IAUTH OPTIONS
+.TP
+.B timeout = <seconds>
+This allows to specify how much time each module has to complete its work
+for each connection.  This option can also be specified individually for
+each module.  The default is 30 seconds.
+.TP
+.B required
+By specifying this keyword, the IRC server is told not to accept new user
+connections unless the authentication is handled by \fIiauth\fP.  This does
+NOT mean that the server will wait forever to get the data from iauth, see
+the \fInotimeout\fP option.
+.TP
+.B notimeout
+By specifying this keyword, the IRC server is told not to accept new user
+connections if \fIiauth\fP hasn't finished its work in time.
+.TP
+.B extinfo
+This keyword allows extra information (user supplied username, and
+eventually password) to be received by \fIiauth\fP from the server.  This
+is only useful is a module using this information is loaded.
+.TP
+.B shared <name> <mod_name.so>
+If iauth was compiled with Dynamically Shared Module support, it can be
+told to dynamically load a module using this option.  The module can then
+be loaded.
 .SH MODULES
 .TP
 .B pipe
@@ -52,11 +82,11 @@ This module requires the following option:
 .TP
 .B socks
 This module performs a basic check to verify that the host where the
-connection originated from doesn't run a SOCKS v4 proxy server on port 1080
-that is open to the world.  It is useful to reject abusive clients using a
-relay to evade kill lines and bans.
+connection originated from doesn't run a SOCKS v4 or v5 proxy server on
+port 1080 that is open to the world.  It is useful to reject abusive
+clients using a relay to evade kill lines and bans.
 
-This module understands four options:
+This module understands seven options:
 .B reject
 to reject connections originating from a host where an open proxy
 was detected,
@@ -68,42 +98,61 @@ mismatch to be OPEN proxies.
 .B cache[=value]
 to set the cache lifetime in minutes.  By default, caching is enabled for
 30 minutes.  A value of 0 disables caching.
+.B careful
+to make sure socks v5 is properly configured with IP rulesets.  Without
+this parameter, module will not send additional query and assume first
+positive answer as valid.
+.B v4only
+to check only socks v4.
+.B v5only
+to check only socks v5.
 .TP
 .B rfc931
 This module is for authentication TCP connections using the protocol
-defined in RFC 1413 (which obsoletes RFC 931).
+defined in RFC 1413 (which obsoletes RFC 931).  It is always loaded, and
+does not recognize the \fIhost\fP nor \fIip\fP fields.
+.TP
+.B lhex
+This module acts as a proxy, communicating with a LHEx server to perform
+authentication of client connections.  It takes a single (mandatory)
+option, which is the IP-address of the LHEx server to use.
 .SH EXAMPLE
-The following file will cause the IRC daemon to reject and log all
-connections originating from a system where an open proxy is running.  For
-all connections, an ident lookup (RFC 1413) will be performed.
+The following file will cause the IRC daemon to reject all connections
+originating from a system where an open proxy is running for hosts within
+*.fr and *.enserb.u-bordeaux.fr but not for other hosts matching
+*.u-bordeaux.fr.  For all connections, an ident lookup (RFC 1413) will be
+performed. In addition, every connection is authenticated with the LHEx
+server at IP-address 127.0.0.1.
 
 .RS
 .nf
 module socks
-        option = log,reject
+        option = reject,paranoid
+        host = *.enserb.u-bordeaux.fr
+        host = !*.u-bordeaux.fr 
+        host = *.fr            
 
 module rfc931
+
+module lhex
+        option = 127.0.0.1
 .fi
 .RE
-
-The following file will cause the IRC daemon to only attempt an ident
-lookup for connections originating from a host which has an internet
-address.
-
-.RS
-.nf
-module rfc931
-        host = *
-.fi
+.SH CAVEATS
+When the option
+.B extinfo
+is set, connections registering as a server or a service with the IRC
+server are not guaranteed to receive the "user" authentication provided by
+modules (such as the rfc931 module).
 .RE
 .SH COPYRIGHT
-(c) 1998 Christophe Kalt
+(c) 1998,1999 Christophe Kalt
 .LP
 For full COPYRIGHT see LICENSE file with IRC package.
 .LP
 .RE
 .SH FILES
- "iauth.conf"
+"iauth.conf"
 .SH "SEE ALSO"
 iauth(8)
 .SH AUTHOR

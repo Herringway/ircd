@@ -1,6 +1,6 @@
 /************************************************************************
- *   IRC - Internet Relay Chat, ircd/s_auth_ext.h
- *   Copyright (C) 1997 Alain Nissen
+ *   IRC - Internet Relay Chat, iauth/mod_lhex_ext.h
+ *   Copyright (C) 1998-1999 Christophe Kalt and Andrew Snare
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -18,35 +18,11 @@
  */
 
 /*  This file contains external definitions for global variables and functions
-    defined in ircd/s_auth.c.
+    defined in iauth/mod_lhex.c.
  */
 
-/*  External definitions for global functions.
+/*  External definitions for global variables.
  */
-#ifndef S_AUTH_C
-# if defined(USE_IAUTH)
-extern u_char iauth_options;
-extern u_int iauth_spawn;
-# endif
-#
-# define EXTERN extern
-#else /* S_AUTH_C */
-# define EXTERN
-#endif /* S_AUTH_C */
-
-#if defined(USE_IAUTH)
-# if ! USE_STDARG
-EXTERN int sendto_iauth();
-# else /* USE_STDARG */
-EXTERN int vsendto_iauth (char *pattern, va_list va);
-EXTERN int sendto_iauth (char *pattern, ...);
-# endif
-EXTERN void read_iauth();
-EXTERN void report_iauth_conf __P((aClient *, char *));
-EXTERN void report_iauth_stats __P((aClient *, char *));
-#endif
-EXTERN void start_auth __P((Reg aClient *cptr));
-EXTERN void send_authports __P((aClient *cptr));
-EXTERN void read_authports __P((Reg aClient *cptr));
-
-#undef EXTERN
+#ifndef MOD_LHEX_C
+extern aModule Module_lhex;
+#endif /* MOD_LHEX_C */

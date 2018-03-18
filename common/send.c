@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: send.c,v 1.30 1998/12/28 15:44:57 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: send.c,v 1.39 1999/07/21 22:57:40 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -87,6 +87,27 @@ char	*notice;
 
 #ifndef CLIENT_COMPILE
 /*
+** flush_fdary
+**      Used to empty all output buffers for connections in fdary.
+*/
+void    flush_fdary(fdp)
+FdAry   *fdp;
+{
+        int     i;
+        aClient *cptr;
+
+        for (i = 0; i <= fdp->highest; i++)
+            {
+                if (!(cptr = local[fdp->fd[i]]))
+                        continue;
+                if (!IsRegistered(cptr)) /* is this needed?? -kalt */
+                        continue;
+                if (DBufLength(&cptr->sendQ) > 0)
+                        (void)send_queued(cptr);
+            }
+}
+
+/*
 ** flush_connections
 **	Used to empty all output buffers for all connections. Should only
 **	be called once per scan of connections. There should be a select in
@@ -98,7 +119,6 @@ char	*notice;
 void	flush_connections(fd)
 int	fd;
 {
-#ifdef SENDQ_ALWAYS
 	Reg	int	i;
 	Reg	aClient *cptr;
 
@@ -110,7 +130,6 @@ int	fd;
 	    }
 	else if (fd >= 0 && (cptr = local[fd]) && DBufLength(&cptr->sendQ) > 0)
 		(void)send_queued(cptr);
-#endif
 }
 #endif
 
@@ -119,7 +138,6 @@ int	fd;
 **	Internal utility which delivers one message buffer to the
 **	socket. Takes care of the error handling and buffering, if
 **	needed.
-**	if SENDQ_ALWAYS is defined, the message will be queued.
 **	if ZIP_LINKS is defined, the message will eventually be compressed,
 **	anything stored in the sendQ is compressed.
 */
@@ -127,7 +145,7 @@ static	int	send_message(to, msg, len)
 aClient	*to;
 char	*msg;	/* if msg is a null pointer, we are flushing connection */
 int	len;
-#ifdef SENDQ_ALWAYS
+#if !defined(CLIENT_COMPILE)
 {
 	int i;
 
@@ -138,22 +156,19 @@ int	len;
 	if (to->fd < 0)
 	    {
 		Debug((DEBUG_ERROR,
-		      "Local socket %s with negative fd... AARGH!",
+		       "Local socket %s with negative fd... AARGH!",
 		      to->name));
 	    }
-#ifndef	CLIENT_COMPILE
-	else if (IsMe(to))
+	if (IsMe(to))
 	    {
 		sendto_flag(SCH_ERROR, "Trying to send to myself! [%s]", msg);
 		return 0;
 	    }
-#endif
 	if (IsDead(to))
 		return 0; /* This socket has already been marked as dead */
-# ifndef	CLIENT_COMPILE
 	if (DBufLength(&to->sendQ) > get_sendq(to))
 	    {
-#  ifdef HUB
+# ifdef HUB
 		if (CBurst(to))
 		    {
 			aConfItem	*aconf = to->serv->nline;
@@ -176,7 +191,7 @@ int	len;
 			to->exitc = EXITC_SENDQ;
 			return dead_link(to, "Max Sendq exceeded");
 		    }
-#  else /* HUB */
+# else /* HUB */
 		if (IsService(to) || IsServer(to))
 			sendto_flag(SCH_ERROR,
 				"Max SendQ limit exceeded for %s: %d > %d",
@@ -184,10 +199,9 @@ int	len;
 				DBufLength(&to->sendQ), get_sendq(to));
 		to->exitc = EXITC_SENDQ;
 		return dead_link(to, "Max Sendq exceeded");
-#  endif /* HUB */
+# endif /* HUB */
 	    }
 	else
-# endif
 	    {
 tryagain:
 # ifdef	ZIP_LINKS
@@ -245,7 +259,7 @@ tryagain:
 		send_queued(to);
 	return 0;
 }
-#else /* SENDQ_ALWAYS */
+#else /* CLIENT_COMPILE */
 {
 	int	rlen = 0, i;
 
@@ -259,97 +273,11 @@ tryagain:
 		      "Local socket %s with negative fd... AARGH!",
 		      to->name));
 	    }
-#ifndef	CLIENT_COMPILE
-	else if (IsMe(to))
-	    {
-		sendto_flag(SCH_ERROR, "Trying to send to myself! [%s]", msg);
-		return 0;
-	    }
-#endif
 	if (IsDead(to))
 		return 0; /* This socket has already been marked as dead */
 
-	/*
-	** DeliverIt can be called only if SendQ is empty...
-	*/
-	if ((DBufLength(&to->sendQ) == 0) &&
-	    (rlen = deliver_it(to, msg, len)) < 0)
+	if ((rlen = deliver_it(to, msg, len)) < 0 && rlen < len)
 		return dead_link(to,"Write error to %s, closing link");
-	else if (rlen < len)
-	    {
-		/*
-		** Was unable to transfer all of the requested data. Queue
-		** up the remainder for some later time...
-		*/
-# ifndef	CLIENT_COMPILE
-		if (DBufLength(&to->sendQ) > get_sendq(to))
-		    {
-#  ifdef HUB
-			if ((IsService(to) || IsServer(to)) && CBurst(to))
-			    {
-				aClass	*cl = to->serv->nline->class;
-
-				poolsize -= MaxSendq(cl) >> 1;
-				IncSendq(cl);
-				poolsize += MaxSendq(cl) >> 1;
-				sendto_flag(SCH_NOTICE,
-				    "New poolsize %d. (sendq adjusted)",
-                                            poolsize);
-				istat.is_dbufmore++;
-			    }
-			else if (IsServer(to) || IsService(to))
-#  else
-			if (IsServer(to) || IsService(to))
-#  endif
-			sendto_flag(SCH_ERROR,
-				"Max SendQ limit exceeded for %s: %d > %d",
-				 get_client_name(to, FALSE),
-				 DBufLength(&to->sendQ), get_sendq(to));
-			return dead_link(to, "Max Sendq exceeded");
-		    }
-		else
-# endif
-		    {
-tryagain:
-# ifdef	ZIP_LINKS
-	        /*
-		** data is first stored in to->zip->outbuf until
-		** it's big enough to be compressed and stored in the sendq.
-		** send_queued is then responsible to never let the sendQ
-		** be empty and to->zip->outbuf not empty.
-		*/
-			if (to->flags & FLAGS_ZIP)
-				msg = zip_buffer(to, msg, &len, 0);
-
-			if (len && (i = dbuf_put(&to->sendQ, msg+rlen,
-						 len-rlen)) < 0)
-# else 	/* ZIP_LINKS */
-			if ((i = dbuf_put(&to->sendQ, msg+rlen, len-rlen)) < 0)
-# endif	/* ZIP_LINKS */
-				if (i == -2 && CBurst(to))
-				    {
-				/* poolsize was exceeded while connect burst */
-					aConfItem *aconf = to->serv->nline;
-
-					poolsize -= MaxSendq(aconf->class) >>1;
-					IncSendq(aconf->class);
-					poolsize += MaxSendq(aconf->class) >>1;
-#ifndef	CLIENT_COMPILE
-					sendto_flag(SCH_NOTICE,
-					    "New poolsize %d. (reached)",
-						    poolsize);
-					istat.is_dbufmore++;
-#endif
-					goto tryagain;
-				    }
-				else
-				    {
-					to->exitc = EXITC_MBUF;
-					return dead_link(to,
-					 "Buffer allocation error for %s");
-				    }
-		    }
-	    }
 	/*
 	** Update statistics. The following is slightly incorrect
 	** because it counts messages even if queued, but bytes
@@ -386,11 +314,7 @@ aClient *to;
 		** not working correct if send_queued is called for a
 		** dead socket... --msa
 		*/
-#ifndef SENDQ_ALWAYS
-		return dead_link(to, "send_queued called for a DEADSOCKET:%s");
-#else
 		return -1;
-#endif
 	    }
 #ifdef	ZIP_LINKS
 	/*
@@ -458,7 +382,7 @@ aClient *to;
 
 
 #ifndef CLIENT_COMPILE
-static	anUser	ausr = { NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL, NULL, NULL,
+static	anUser	ausr = { NULL, NULL, NULL, NULL, 0, 0, 0, 0, NULL,
 			 NULL, "anonymous", "anonymous.", "anonymous."};
 
 static	aClient	anon = { NULL, NULL, NULL, &ausr, NULL, NULL, 0, 0,/*flags*/
@@ -797,76 +721,89 @@ void	sendto_serv_butone(aClient *one, char *pattern, ...)
 }
 
 #if ! USE_STDARG
-void	sendto_serv_v(one, ver, pattern, p1, p2, p3, p4,p5,p6,p7,p8,p9,p10,p11)
+int
+sendto_serv_v(one, ver, pattern, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11)
 aClient *one;
 int	ver;
 char	*pattern, *p1, *p2, *p3, *p4, *p5, *p6, *p7, *p8, *p9, *p10, *p11;
 #else
-void	sendto_serv_v(aClient *one, int ver, char *pattern, ...)
+int
+sendto_serv_v(aClient *one, int ver, char *pattern, ...)
 #endif
 {
-	Reg	int	i, len=0;
+	Reg	int	i, len=0, rc=0;
 	Reg	aClient *cptr;
 
 	for (i = fdas.highest; i >= 0; i--)
 		if ((cptr = local[fdas.fd[i]]) &&
-		    (!one || cptr != one->from) && !IsMe(cptr) &&
-		    (cptr->serv->version & ver)) {
-			if (!len)
+		    (!one || cptr != one->from) && !IsMe(cptr))
+			if (cptr->serv->version & ver)
 			    {
+				if (!len)
+				    {
 #if ! USE_STDARG
-				len = sendprep(pattern, p1, p2, p3, p4, p5,
-					       p6, p7, p8, p9, p10, p11);
+					len = sendprep(pattern, p1, p2, p3, p4,
+						       p5, p6, p7, p8, p9, p10,
+						       p11);
 #else
-				va_list	va;
-				va_start(va, pattern);
-				len = vsendprep(pattern, va);
-				va_end(va);
+					va_list	va;
+					va_start(va, pattern);
+					len = vsendprep(pattern, va);
+					va_end(va);
 #endif
+				    }
+				(void)send_message(cptr, sendbuf, len);
 			    }
-			(void)send_message(cptr, sendbuf, len);
-	}
-	return;
+			else
+				rc = 1;
+	return rc;
 }
 
 #if ! USE_STDARG
-void	sendto_serv_notv(one, ver, pattern, p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11)
+int
+sendto_serv_notv(one, ver, pattern, p1, p2, p3, p4, p5, p6, p7, p8, p9,p10,p11)
 aClient *one;
 int	ver;
 char	*pattern, *p1, *p2, *p3, *p4, *p5, *p6, *p7, *p8, *p9, *p10, *p11;
 #else
-void	sendto_serv_notv(aClient *one, int ver, char *pattern, ...)
+int
+sendto_serv_notv(aClient *one, int ver, char *pattern, ...)
 #endif
 {
-	Reg	int	i, len=0;
+	Reg	int	i, len=0, rc=0;
 	Reg	aClient *cptr;
 
 	for (i = fdas.highest; i >= 0; i--)
 		if ((cptr = local[fdas.fd[i]]) &&
-		    (!one || cptr != one->from) && !IsMe(cptr) &&
-		    ((cptr->serv->version & ver) == 0)) {
-			if (!len)
+		    (!one || cptr != one->from) && !IsMe(cptr))
+			if ((cptr->serv->version & ver) == 0)
 			    {
+				if (!len)
+				    {
 #if ! USE_STDARG
-				len = sendprep(pattern, p1, p2, p3, p4, p5,
-					       p6, p7, p8, p9, p10, p11);
+					len = sendprep(pattern, p1, p2, p3, p4,
+						       p5, p6, p7, p8, p9, p10,
+						       p11);
 #else
-				va_list	va;
-				va_start(va, pattern);
-				len = vsendprep(pattern, va);
-				va_end(va);
+					va_list	va;
+					va_start(va, pattern);
+					len = vsendprep(pattern, va);
+					va_end(va);
 #endif
+				    }
+				(void)send_message(cptr, sendbuf, len);
 			    }
-			(void)send_message(cptr, sendbuf, len);
-	}
-	return;
+			else
+				rc = 1;
+	return rc;
 }
 
 /*
  * sendto_common_channels()
  *
  * Sends a message to all people (inclusing user) on local server who are
- * in same channel with user.
+ * in same channel with user, except for channels set Quiet or Anonymous
+ * The calling procedure must take the necessary steps for such channels.
  */
 #if ! USE_STDARG
 /*VARARGS*/
@@ -913,8 +850,12 @@ void	sendto_common_channels(aClient *user, char *pattern, ...)
 			    user == cptr || !user->user)
 				continue;
 			for (lp = user->user->channel; lp; lp = lp->next)
-				if (IsMember(cptr, lp->value.chptr) &&
-				    !IsQuiet(lp->value.chptr))
+			    {
+				if (!IsMember(cptr, lp->value.chptr))
+					continue;
+				if (IsAnonymous(lp->value.chptr))
+					continue;
+				if (!IsQuiet(lp->value.chptr))
 				    {
 #ifndef DEBUGMODE
 					if (!len) /* This saves little cpu,
@@ -937,6 +878,7 @@ void	sendto_common_channels(aClient *user, char *pattern, ...)
 							   len);
 					break;
 				    }
+			    }
 		    }
 	    }
 	else
@@ -963,6 +905,8 @@ void	sendto_common_channels(aClient *user, char *pattern, ...)
 		     channels=channels->next)
 		    {
 			if (IsQuiet(channels->value.chptr))
+				continue;
+			if (IsAnonymous(channels->value.chptr))
 				continue;
 			for (lp=channels->value.chptr->members;lp;
 			     lp=lp->next)
@@ -1144,25 +1088,27 @@ void	sendto_match_servs(aChannel *chptr, aClient *from, char *format, ...)
 
 #if ! USE_STDARG
 /*VARARGS*/
-void	sendto_match_servs_v(chptr, from, ver, format, p1, p2, p3, p4, p5, p6,
-			     p7, p8, p9, p10, p11)
+int
+sendto_match_servs_v(chptr, from, ver, format, p1, p2, p3, p4, p5, p6,
+		     p7, p8, p9, p10, p11)
 aChannel *chptr;
 aClient	*from;
 char	*format, *p1, *p2, *p3, *p4, *p5, *p6, *p7, *p8, *p9, *p10, *p11;
 int	ver;
 #else
-void	sendto_match_servs_v(aChannel *chptr, aClient *from, int ver,
-			     char *format, ...)
+int
+sendto_match_servs_v(aChannel *chptr, aClient *from, int ver,
+		     char *format, ...)
 #endif
 {
-	Reg	int	i, len=0;
+	Reg	int	i, len=0, rc=0;
 	Reg	aClient	*cptr;
 	char	*mask;
 
 	if (chptr)
 	    {
 		if (*chptr->chname == '&')
-			return;
+			return 0;
 		if ((mask = (char *)rindex(chptr->chname, ':')))
 			mask++;
 	    }
@@ -1176,11 +1122,14 @@ void	sendto_match_servs_v(aChannel *chptr, aClient *from, int ver,
 			continue;
 		if (!BadPtr(mask) && match(mask, cptr->name))
 			continue;
-		if ((ver & cptr->serv->version) == 0)
-			continue;
 		if (chptr &&
 		    *chptr->chname == '!' && !(cptr->serv->version & SV_NJOIN))
 			continue;
+		if ((ver & cptr->serv->version) == 0)
+		    {
+			rc = 1;
+			continue;
+		    }
 		if (!len)
 		    {
 #if ! USE_STDARG
@@ -1195,6 +1144,68 @@ void	sendto_match_servs_v(aChannel *chptr, aClient *from, int ver,
 		    }
 		(void)send_message(cptr, sendbuf, len);
 	    }
+	return rc;
+}
+
+#if ! USE_STDARG
+/*VARARGS*/
+int
+sendto_match_servs_notv(chptr, from, ver, format, p1, p2, p3, p4, p5,
+			p6, p7, p8, p9, p10, p11)
+aChannel *chptr;
+aClient	*from;
+char	*format, *p1, *p2, *p3, *p4, *p5, *p6, *p7, *p8, *p9, *p10, *p11;
+int	ver;
+#else
+int
+sendto_match_servs_notv(aChannel *chptr, aClient *from, int ver,
+			char *format, ...)
+#endif
+{
+	Reg	int	i, len=0, rc=0;
+	Reg	aClient	*cptr;
+	char	*mask;
+
+	if (chptr)
+	    {
+		if (*chptr->chname == '&')
+			return 0;
+		if ((mask = (char *)rindex(chptr->chname, ':')))
+			mask++;
+	    }
+	else
+		mask = (char *)NULL;
+
+	for (i = fdas.highest; i >= 0; i--)
+	    {
+		if (!(cptr = local[fdas.fd[i]]) || (cptr == from) ||
+		    IsMe(cptr))
+			continue;
+		if (!BadPtr(mask) && match(mask, cptr->name))
+			continue;
+		if (chptr &&
+		    *chptr->chname == '!' && !(cptr->serv->version & SV_NJOIN))
+			continue;
+		if ((ver & cptr->serv->version) != 0)
+		    {
+			rc = 1;
+			continue;
+		    }
+		if (!len)
+		    {
+#if ! USE_STDARG
+			len = sendprep(format, p1, p2, p3, p4, p5, p6, p7,
+				       p8, p9, p10, p11);
+#else
+			va_list	va;
+			va_start(va, format);
+			len = vsendprep(format, va);
+			va_end(va);
+#endif
+		    }
+		(void)send_message(cptr, sendbuf, len);
+	    }
+	return rc;
 }
 
 /*
@@ -1215,9 +1226,9 @@ void	sendto_match_butone(aClient *one, aClient *from, char *mask, int what, char
 
 #endif
 {
-	Reg	int	i;
-	Reg	aClient *cptr, *acptr = NULL;
-	Reg	anUser	*user;
+	int	i;
+	aClient *cptr,
+		*srch;
   
 	for (i = 0; i <= highest_fd; i++)
 	    {
@@ -1227,12 +1238,24 @@ void	sendto_match_butone(aClient *one, aClient *from, char *mask, int what, char
 			continue;
 		if (IsServer(cptr))
 		    {
-			for (user = usrtop; user; user = user->nextu)
-				if (IsRegisteredUser(acptr = user->bcptr) &&
-				    acptr->from == cptr &&
-				    match_it(acptr, mask, what))
+			/*
+			** we can save some CPU here by not searching the
+			** entire list of users since it is ordered!
+			** original idea/code from pht.
+			** it could be made better by looping on the list of
+			** servers to avoid non matching blocks in the list
+			** (srch->from != cptr), but then again I never
+			** bothered to worry or optimize this routine -kalt
+			*/
+			for (srch = cptr->prev; srch; srch = srch->prev)
+			{
+				if (!IsRegisteredUser(srch))
+					continue;
+				if (srch->from == cptr &&
+				    match_it(srch, mask, what))
 					break;
-			if (!user)
+			}
+			if (srch == NULL)
 				continue;
 		    }
 		/* my client, does he match ? */

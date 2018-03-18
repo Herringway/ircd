@@ -1,8 +1,8 @@
   Installing IRC - The Internet Relay Chat Program
   SGML version by Christophe Kalt
-  $Id: INSTALL.txt,v 1.33 1999/01/29 00:00:18 kalt Exp $
+  $Id: INSTALL.txt,v 1.38 1999/08/13 17:22:12 kalt Exp $
 
-  This document describes how to install, and configure IRC 2.10.2.
+  This document describes how to install, and configure IRC 2.10.3.
 
   11..  IInnssttaalllliinngg IIRRCC..
 
@@ -26,13 +26,17 @@
         files will go. It is important to set this properly. (default is
         prefix/sbin)
 
-     ----lliibbddiirr==DDIIRR
-        changes the default directory where most irc files will go.
-        (default is prefix/lib/ircd)
-
      ----llooggddiirr==DDIIRR
         changes the default directory where the irc log files will go.
-        (default is prefix/lib/ircd)
+        (default is prefix/var/log/ircd)
+
+     ----ssyyssccoonnffddiirr==DDIIRR
+        changes the default directory where the irc server configuration
+        files will go. (default is prefix/etc)
+
+     ----llooccaallssttaatteeddiirr==DDIIRR
+        changes the default directory where the irc server state files
+        will go. (default is prefix/var/run)
 
      ----rreessccoonnff==FFIILLEE
         defines the file to be used by ircd to initialize its resolver.
@@ -63,14 +67,16 @@
      ----eennaabbllee--iipp66
         Enable IPv6 support (See notes below)
 
+     ----eennaabbllee--ddssmm
+        Enable Dynamically Shared Modules support for iauth
+
 
   11..22..  NNootteess ffoorr CCyyggwwiinn3322 uusseerrss
 
-  The 2.9.5 release compiles properly on W32 systems which have the GNU-
-  Win32 environment ( <http://www.cygnus.com/misc/gnu-win32/>) setup.
-  At the time of the release, tests were made using the version b18 of
-  the Cygwin32 library with the ``coolview'' patch from Sergey Okhapkin.
-  (This patch should be rolled in the next beta)
+  The daemon of 2.10.3 release compiles properly on W32 systems which
+  have the GNU-Win32 environment ( <http://www.cygnus.com/misc/gnu-
+  win32/>) setup.  At the time of the release, tests were made using the
+  version b20.1 of the Cygwin32 library.
 
   When compiling on such system, you want to make sure that you have
   carefully followed the Cygwin32 installation notes.  In particular,
@@ -81,6 +87,10 @@
   the resolver.  This file can be anywhere (see configure options), and
   is typically in //eettcc on UNIX systems.
 
+  Finally, iauth is automatically disabled.  Even though the iauth
+  program compiles properly, extra work is required to have a working
+  communication channel between the IRC server and the iauth program.
+
 
   11..33..  NNootteess ccoonncceerrnniinngg IIPPvv66 ssuuppppoorrtt
 
@@ -88,8 +98,8 @@
   internal resolver.  It relies on the name servers defined in
   ``/etc/resolv.conf'' to be IPv4 addresses.
 
-  This version was tested on the following IPv6 systems: Digital Unix,
-  Linux, NetBSD+INRIA.
+  This version was tested on the following IPv6 systems: BSD/OS+KAME,
+  Digital Unix, FreeBSD+KAME, Linux, NetBSD+INRIA.
 
   Because IPv6 numeric addresses contain ``:'' characters, tthhee sseeppaarraattoorr
   ffoorr tthhee sseerrvveerr ccoonnffiigguurraattiioonn ffiillee wwaass cchhaannggeedd ttoo ````%%''''.
@@ -120,8 +130,6 @@
 
   TThhiiss sshhoouulldd oonnllyy bbee ddeeffiinneedd ffoorr tteesstt ppuurrppoosseess,, aanndd nneevveerr uusseedd oonn aa
   pprroodduuccttiioonn sseerrvveerr..
-
-
   22..33..  CCPPAATTHH,, MMPPAATTHH,, LLPPAATTHH,, PPPPAATTHH,, TTPPAATTHH,, QQPPAATTHH,, OOPPAATTHH
 
   Define CPATH to be the directory path to the ``ircd.conf'' file. This
@@ -130,6 +138,7 @@
 
   The LPATH #define should be set to ``/dev/null'' unless you plan to
   debug the ircd program.  Note that the logfile grows very quickly.
+
   Define MPATH to be the path to the ``motd'' (message of the day) file
   for the server.  Keep in mind this is automatically displayed whenever
   anyone signs on to your server.
@@ -184,6 +193,9 @@
   clients are automatically made invisible when they register.
 
 
+
+
+
   22..88..  OOPPEERR__KKIILLLL,, OOPPEERR__RREEHHAASSHH,, OOPPEERR__RREESSTTAARRTT,, LLOOCCAALL__KKIILLLL__OONNLLYY
 
   The three operator only commands, KILL, REHASH and RESTART, may all be
@@ -191,9 +203,6 @@
   privilidges does not have the power to cause untoward things to occur.
   To further curb the actions of guest operators, LOCAL_KILL_ONLY can be
   defined to only allow locally connected clients to be KILLed.
-
-
-
 
 
   22..99..  ZZIIPP__LLIINNKKSS,, ZZIIPP__LLEEVVEELL
@@ -252,6 +261,7 @@
   Now to build the package, type ``make all''.  If everything goes will,
   you can then install it by typing ``make install''.
 
+
   If you have trouble compiling ircd, copy Makefile.in to Makefile and
   edit Makefile as appropriate.
 
@@ -262,6 +272,7 @@
   per the instructions in this section and install it in the location
   you specified in the config.h file.  There is a sample conf file
   called example.conf in the doc/ directory.
+
   Appendix A (See INSTALL.appendix) describes the differences between IP
   addresses and host names.  If you are unfamiliar with this, you should
   probably scan through it before proceeding.
@@ -316,7 +327,6 @@
   records.  IItt iiss iimmppoorrttaanntt ttoo nnoottee tthhaatt tthhee llaasstt mmaattcchhiinngg rreeccoorrdd wwiillll
   bbee uusseedd.  This is especially useful when setting up I records (client
   connections).
-
 
   44..11..  MMaacchhiinnee iinnffoorrmmaattiioonn
 
@@ -384,7 +394,6 @@
         The ``A'' line is used for administrative information about a
         site. The e-mail address of the person running the server should
         be included here in case problems arise.
-
      FFoorrmmaatt
 
         A:<Your Name/Location>:<Your Electronic Mailing Addr>:<other>::
@@ -392,7 +401,6 @@
 
 
      AA  This specifies an Admin record.
-
 
      YYoouurr NNaammee && LLooccaattiioonn
         Use this field to say tell your FULL NAME and where in the world
@@ -460,6 +468,7 @@
         to properly configure outgoing connections.
 
         P:192.168.1.194:::6664:
+
      IInntteerrnneett IIPP## MMaasskk
         This defines where connections may come from and be accepted.
         The IP mask uses either *'s or 0's as wildcards. The following
@@ -517,7 +526,6 @@
         Each line for a server should have the same number as the sixth
         field.  If it is absent, the server deaults it to 0, using the
         defaults from the config.h file.
-
         To define a connection class, you need to include a Y: line in
         the ircd.conf file.  This enables you to define the ping
         frequency, connection frequency (for servers) and maximum number
@@ -716,7 +724,6 @@
         connect to your server, you would add this entry to the file:
 
         I:x::tolsun.oulu.fi::1
-
         If you wanted to let remote clients connect, you could add the
         following lines:
 
@@ -724,6 +731,7 @@
 
         Allow any clients from machines whose names end in ``.du.edu''
         to connect with no password.
+
         I:128.214.6.100::nic.funet.fi::1
 
         Allow clients from a machine with that IP number to connect.
@@ -781,7 +789,6 @@
         line will have a restricted connection. (no nick/mode change, no
         kick). Such users will have their username prefixed by +, = or -
         depending on the ident reply.
-
 
   44..66..  OOppeerraattoorr pprriivviilliiggeess
 
@@ -856,6 +863,7 @@
         either ``Y'' or ``N'' meaning `Yes Let them in'' or ``No don't
         let them in''.  If the first word begins with neither ``Y'' or
         ``N'' the default is to let the person on.
+
      FFoorrmmaatt
 
         R:<Target Host Name>:<Program>:<User>:::
@@ -922,6 +930,7 @@
         If you specify an IP address, IP mask, or an IP bitmask, it will
         match clients connecting from the matching addresses, no matter
         if they resolve or not.
+
         You can prefix an IP address, an IP mask, or IP bitmask by ``=''
         in which case only non resolving matching hosts will be banned.
 
@@ -979,7 +988,6 @@
         access to your server between 8 and 12am, 2 and 7pm. Users get
         kicked off if they're already signed on when the line becomes
         active (they'll get a warning 5 minutes before).
-
         K:192.11.35.*::*:0:
 
         This line disallows all hosts whose IP address matches
@@ -1177,6 +1185,7 @@
      DDoommaaiinn MMaasskk
         Domain masking, see below.
 
+
      CCllaassss
         The class field should refer to an existing class.
 
@@ -1186,6 +1195,7 @@
         we take an example of such:
 
         *.de  - a domain name matching all machines in Germany.
+
         Wildcard domains are useful in that ALL SERVERS in Germany (or
         any other domain area) can be shown as one to the rest of the
         world. Imagine 100 servers in Germany, it would be incredible
@@ -1240,6 +1250,7 @@
         server in that class is currently present on the network.  Note
         that this can be true for any server, even the ones not directly
         connected.
+
 
      SSeerrvveerr MMaasskk
         This field is matched against the server name that the server
@@ -1316,8 +1327,6 @@
 
 
 
-
-
   44..1122..  LLeeaaff ccoonnnneeccttiioonnss
 
 
@@ -1374,6 +1383,7 @@
 
      FFoorrmmaatt
 
+
         V:<Version Mask>:<Flags>:<Server Mask>::
 
 
@@ -1382,7 +1392,8 @@
         The matching version number strings will be rejected.
 
      FFllaaggss
-        The matching version flags strings will be rejected.
+        If any flag specified in this field is found in the peer's flags
+        string, it will be rejected.
 
      SSeerrvveerr MMaasskk
         This field is used to match server names.  The V line will be
@@ -1399,12 +1410,12 @@
         Disallows any ``IRC'' server which version is 2.10.1* to
         connect.
 
-        V:IRC/021001*:IRC/*D*:*::
+        V:IRC/021001*:IRC/D:*::
 
         Disallows any ``IRC'' server which version is 2.10.1* or which
         has been compiled with DEBUGMODE defined to connect.
 
-        V:*/0209*::*::
+        V:*/0209*::::
 
         Disallows any server using the 2.9 protocol to connect.
 
@@ -1412,9 +1423,9 @@
         It is possible to have and use multiple V-lines for the one
         server mask.
 
-        V:IRC/021001*:*:*::
+        V:IRC/021001*::*::
 
-        V:IRC/021002*:*:*::
+        V:IRC/021002*::*::
 
         is allowed.
 
@@ -1450,6 +1461,7 @@
 
      EExxaammppllee
         Q::of the security holes:foo.bar.baz::
+
         This command excludes a server named ``foo.bar.baz'', the reason
         is given to be security holes (you should give a reason, it is
         polite). The first field is unused, so leave it empty.
@@ -1502,6 +1514,8 @@
         wwiissee ttoo oovveerrsseeee tthhee uussee ooff SS--lliinneess wwiitthh mmuucchh ccaarree..
 
 
+
+
   44..1166..  BBoouunnccee sseerrvveerr
 
 
@@ -1514,6 +1528,7 @@
      FFoorrmmaatt
 
         B:<Class|Host Mask>::<Server Name>:<Port>:
+
 
 
      BB  This specifies a Bounce record.
@@ -1565,6 +1580,7 @@
         define this command to connect to your own host.  If your site
         is not running a server then this command should contain the
         TARGET host's connection information and password (if any).
+
 
      FFoorrmmaatt
 
@@ -1645,26 +1661,10 @@
         If you have a fix, don't forget to include it.
 
 
-
-
-
   66..22..  WWhheerree ttoo sseenndd aa bbuugg rreeppoorrtt
 
   Reports should be sent to ircd-bugs@irc.org.  Your report will be
   reviewed and forwarded to the appropriate mailing list.
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

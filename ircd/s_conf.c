@@ -48,7 +48,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.36 1998/12/13 00:02:37 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.42 1999/05/01 21:29:13 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -61,6 +61,7 @@ static	int	check_time_interval __P((char *, char *));
 static	int	lookup_confhost __P((aConfItem *));
 
 aConfItem	*conf = NULL;
+aConfItem	*kconf = NULL;
 
 /*
  * remove all conf entries from the client except those which match
@@ -302,10 +303,10 @@ aClient *cptr;
 		if (ConfMaxHLocal(aconf) > 0 || ConfMaxUHLocal(aconf) > 0) {
 			Reg     aClient *acptr;
 			Reg     int     i;
-			int	sz = sizeof(cptr->ip);
 
 			for (i = highest_fd; i >= 0; i--)
 				if ((acptr = local[i]) && (cptr != acptr) &&
+				    !IsListening(acptr) &&
 				    !bcmp((char *)&cptr->ip,(char *)&acptr->ip,
 					  sizeof(cptr->ip)))
 				    {
@@ -711,6 +712,13 @@ int	sig;
 			free_conf(tmp2);
 	    	    }
 
+	tmp = &kconf;
+	while ((tmp2 = *tmp))
+	    {
+		*tmp = tmp2->next;
+		free_conf(tmp2);
+	    }
+
 	/*
 	 * We don't delete the class table, rather mark all entries
 	 * for deletion. The table is cleaned up by check_class. - avalon
@@ -737,7 +745,7 @@ int	sig;
 				free_conf(tmp2);
 		    }
 #ifdef CACHED_MOTD
-	read_motd(MPATH);
+	read_motd(IRCDMOTD_PATH);
 #endif
 	rehashed = 1;
 	return ret;
@@ -777,7 +785,7 @@ int	openconf()
 		 * goes out with report_error.  Could be dangerous,
 		 * two servers running with the same fd's >:-) -avalon
 		 */
-		(void)execlp("m4", "m4", "ircd.m4", configfile, 0);
+		(void)execlp("m4", "m4", IRCDM4_PATH, configfile, 0);
 		report_error("Error executing m4 %s:%s", &me);
 		_exit(-1);
 	default :
@@ -994,7 +1002,10 @@ int	opt;
 			DupString(aconf->name, tmp);
 			if ((tmp = getfield(NULL)) == NULL)
 				break;
-			aconf->port = atoi(tmp);
+			aconf->port = 0;
+			if (sscanf(tmp, "0x%x", &aconf->port) != 1 ||
+			    aconf->port == 0)
+				aconf->port = atoi(tmp);
 			if (aconf->status == CONF_CONNECT_SERVER)
 				DupString(tmp2, tmp);
 			if (aconf->status == CONF_ZCONNECT_SERVER)
@@ -1149,8 +1160,16 @@ int	opt;
 		      aconf->name, aconf->port,
 		      aconf->class ? ConfClass(aconf) : 0));
 
-		aconf->next = conf;
-		conf = aconf;
+		if (aconf->status & (CONF_KILL|CONF_OTHERKILL))
+		    {
+			aconf->next = kconf;
+			kconf = aconf;
+		    }
+		else
+		    {
+			aconf->next = conf;
+			conf = aconf;
+		    }
 		aconf = NULL;
 	    }
 	if (aconf)
@@ -1258,12 +1277,12 @@ char	**comment;
 
 	*reply = '\0';
 
-	for (tmp = conf; tmp; tmp = tmp->next)
+	for (tmp = kconf; tmp; tmp = tmp->next)
 	    {
 		if (!doall && (BadPtr(tmp->passwd) || !isdigit(*tmp->passwd)))
 			continue;
 		if (!(tmp->status & (CONF_KILL | CONF_OTHERKILL)))
-			continue;
+			continue; /* should never happen with kconf */
 		if (!tmp->host || !tmp->name)
 			continue;
 		if (tmp->status == CONF_KILL)
@@ -1357,11 +1376,16 @@ char	*name, *key;
 int	stat;
 {
 	aConfItem *tmp;
+	int l;
 
+	if (index(key, '/') == NULL)
+		return 0;
+	l = ((char *)index(key, '/') - key) + 1;
 	for (tmp = conf; tmp; tmp = tmp->next)
  		if ((tmp->status == stat) && tmp->passwd && tmp->name &&
- 		    (match(tmp->name, name) == 0) &&
-		    (match(tmp->passwd, key) == 0))
+		    (strncasecmp(key, tmp->passwd, l) == 0) &&
+		    (match(tmp->name, name) == 0) &&
+		    (strpbrk(key + l, tmp->passwd + l)))
 			break;
  	return (tmp ? -1 : 0);
 }

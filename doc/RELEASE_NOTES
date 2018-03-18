@@ -1,10 +1,27 @@
-# @(#)$Id: RELEASE_NOTES,v 1.30 1999/01/29 00:08:52 kalt Exp $
+# @(#)$Id: RELEASE_NOTES,v 1.34 1999/08/13 17:55:01 kalt Exp $
 
-This is version 2.10.2 of the IRC software.
+This is version 2.10.3 of the IRC software.
 
 ===============================================================================
 
-This version of the software adds support for IPv6.
+New features in 2.10.3:
+	* new options for iauth.conf to better control iauth behaviour
+	* iauth now supports dynamically shared modules.
+	* socks module now checks for both v4 and v5 of the SOCKS protocol.
+	* iauth has a new module: LHEx, see ftp://ftp.irc.org/irc/server/LHEx
+
+Important changes in 2.10.3 (since 2.10.2):
+	* default PATHs have changed, see INSTALL file and Makefile.
+	* V line code was fixed, and format slightly changed again.
+
+------
+
+Because of the many changes concerning iauth, it is recommended that this new
+version of the iauth program not be used with older version of the IRC daemon.
+
+===============================================================================
+
+Version 2.10.2 of the software adds support for IPv6.
 
 Important changes in 2.10.2 (since 2.10.1):
 	* iauth's socks module now uses an internal cache.
