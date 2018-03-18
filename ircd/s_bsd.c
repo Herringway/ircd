@@ -35,7 +35,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.73.2.8 2000/05/29 19:28:20 q Exp $";
+static  char rcsid[] = "@(#)$Id: s_bsd.c,v 1.73.2.19 2001/06/30 20:18:55 q Exp $";
 #endif
 
 #include "os.h"
@@ -132,7 +132,7 @@ int	size;
 **	text	is a *format* string for outputting error. It must
 **		contain only two '%s', the first will be replaced
 **		by the sockhost from the cptr, and the latter will
-**		be taken from sys_errlist[errno].
+**		by strerror(errno).
 **
 **	cptr	if not NULL, is the *LOCAL* client associated with
 **		the error.
@@ -230,7 +230,7 @@ int	port;
 		if (!ip || (!isxdigit(*ip) && *ip != ':'))
 			server.sin6_addr = in6addr_any;
 		else
-			if(!inet_pton(AF_INET6, ip, server.sin6_addr.s6_addr))
+			if(!inetpton(AF_INET6, ip, server.sin6_addr.s6_addr))
 				bcopy(minus_one, server.sin6_addr.s6_addr,
 				      IN6ADDRSZ);
 #else
@@ -1184,7 +1184,7 @@ void	close_connection(cptr)
 aClient *cptr;
 {
 	Reg	aConfItem *aconf;
-	Reg	int	i,j;
+	Reg	int	i;
 #ifdef SO_LINGER
 	struct 	linger	sockling;
 
@@ -1299,40 +1299,6 @@ aClient *cptr;
 		local[i] = NULL;
 		(void)close(i);
 
-		/*
-		 * fd remap to keep local[i] filled at the bottom.
-		 *	don't *ever* move descriptors for 
-		 *		+ log file
-		 *		+ sockets bound to listen() ports
-		 *	--Yegg
-		 */
-		if (i >= 0 && (j = highest_fd) > i)
-		    {
-			while (!local[j])
-				j--;
-			if (j > i && local[j] &&
-			    !(IsLog(local[j]) || IsMe(local[j])))
-			    {
-				if (dup2(j,i) == -1)
-					return;
-				local[i] = local[j];
-				local[i]->fd = i;
-				local[j] = NULL;
-				(void)close(j);
-				del_fd(j, &fdall);
-				add_fd(i, &fdall);
-				if (IsServer(local[i]) || IsMe(local[i]))
-				    {
-					del_fd(j, &fdas);
-					add_fd(i, &fdas);
-				    }
-				while (!local[highest_fd])
-					highest_fd--;
-#if defined(USE_IAUTH)
-				sendto_iauth("%d R %d", j, i);
-#endif
-			    }
-		    }
 		cptr->fd = -2;
 		DBufClear(&cptr->sendQ);
 		DBufClear(&cptr->recvQ);
@@ -1616,6 +1582,7 @@ add_con_refuse:
 
 		lin.flags = ASYNC_CLIENT;
 		lin.value.cptr = acptr;
+		lin.next = NULL;
 #ifdef INET6
 		Debug((DEBUG_DNS, "lookup %s",
 		       inet_ntop(AF_INET6, (char *)&addr.sin6_addr,
@@ -1636,19 +1603,13 @@ add_con_refuse:
 		sendto_flag(SCH_LOCAL, "Rejecting connection from %s[%s].",
 			    (acptr->hostp) ? acptr->hostp->h_name : "",
 			    acptr->sockhost);
-		sendto_flog(acptr, " ?Clone? ", 0, "<none>",
+		sendto_flog(acptr, " ?Clone? ", "<none>",
 			    (acptr->hostp) ? acptr->hostp->h_name :
 			    acptr->sockhost);
 		del_queries((char *)acptr);
-# ifdef INET6
-		(void)sendto(acptr->fd,
-			     "ERROR :Too rapid connections from your host\r\n",
-			     46, 0, 0, 0);
-# else
-		(void)send(acptr->fd,
+		(void)send(fd,
 			   "ERROR :Too rapid connections from your host\r\n",
 			   46, 0);
-# endif
 		goto add_con_refuse;
 	    }
 #endif
@@ -1764,7 +1725,7 @@ aClient *cptr;
 		if ((fdnew = accept(cptr->fd, NULL, NULL)) < 0)
 		    {
 			if (errno != EWOULDBLOCK)
-				report_error("Cannot accept connections %s:%s",
+				report_error("Cannot accept connection %s:%s",
 					     cptr);
 			break;
 		    }
@@ -1775,14 +1736,8 @@ aClient *cptr;
 			sendto_flag(SCH_ERROR, "All connections in use. (%s)",
 				    get_client_name(cptr, TRUE));
 			find_bounce(NULL, 0, fdnew);
-#ifdef INET6
-			(void)sendto(fdnew,
-				     "ERROR :All connections in use\r\n",
-				     32, 0, 0, 0);
-#else
 			(void)send(fdnew, "ERROR :All connections in use\r\n",
 				   32, 0);
-#endif
 			(void)close(fdnew);
 			continue;
 		    }
@@ -2298,9 +2253,17 @@ int	ro;
 deadsocket:
 				if (TST_READ_EVENT(fd))
 					CLR_READ_EVENT(fd);
-				cptr->exitc = EXITC_ERROR;
-				(void)exit_client(cptr, cptr, &me,
-						  strerror(get_sockerr(cptr)));
+				if (cptr->exitc == EXITC_SENDQ)
+				{
+					(void)exit_client(cptr,cptr,&me,
+						"Max SendQ exceeded");
+				}
+				else
+				{
+					cptr->exitc = EXITC_ERROR;
+					(void)exit_client(cptr, cptr, &me,
+						strerror(get_sockerr(cptr)));
+				}
 				continue;
 			    }
 		    }
@@ -2426,7 +2389,7 @@ struct	hostent	*hp;
 		s = (char *)index(aconf->host, '@');
 		s++; /* should NEVER be NULL */
 #ifdef INET6
-		if (!inet_pton(AF_INET6, s, aconf->ipnum.s6_addr))
+		if (!inetpton(AF_INET6, s, aconf->ipnum.s6_addr))
 #else
 		if ((aconf->ipnum.s_addr = inetaddr(s)) == -1)
 #endif
@@ -2597,7 +2560,7 @@ int	*lenp;
 	 */
 #ifdef INET6
 	if (isdigit(*aconf->host) && (AND16(aconf->ipnum.s6_addr) == 255))
-		if (!inet_pton(AF_INET6, aconf->host,aconf->ipnum.s6_addr))
+		if (!inetpton(AF_INET6, aconf->host,aconf->ipnum.s6_addr))
 			bcopy(minus_one, aconf->ipnum.s6_addr, IN6ADDRSZ);
 	if (AND16(aconf->ipnum.s6_addr) == 255)
 #else
@@ -2723,7 +2686,7 @@ char	*namebuf, *linebuf, *chname;
 {
 	static	char	wrerr[] = "NOTICE %s :Write error. Couldn't summon.";
 	int	fd;
-	char	line[120];
+	char	line[512];
 	struct	tm	*tp;
 
 	tp = localtime(&timeofday);
@@ -2855,7 +2818,7 @@ int	len;
 	
 	if ((aconf = find_me())->passwd && isdigit(*aconf->passwd))
 #ifdef INET6
-		if(!inet_pton(AF_INET6, aconf->passwd, mysk.sin6_addr.s6_addr))
+		if(!inetpton(AF_INET6, aconf->passwd, mysk.sin6_addr.s6_addr))
 			bcopy(minus_one, mysk.sin6_addr.s6_addr, IN6ADDRSZ);
 #else
 		mysk.sin_addr.s_addr = inetaddr(aconf->passwd);
@@ -2934,7 +2897,7 @@ aConfItem	*aconf;
 	if (aconf->passwd && isdigit(*aconf->passwd))
 #ifdef INET6
 	    {
-		if (!inet_pton(AF_INET6, aconf->passwd,from.sin6_addr.s6_addr))
+		if (!inetpton(AF_INET6, aconf->passwd,from.sin6_addr.s6_addr))
 			bcopy(minus_one, from.sin6_addr.s6_addr, IN6ADDRSZ);
 	    }
 #else
@@ -3123,7 +3086,16 @@ static	void	polludp()
 			return;
 		else
 		    {
-			report_error("udp port recvfrom (%s): %s", &me);
+			char buf[100];
+
+			sprintf(buf, "udp port recvfrom() from %s to %%s: %%s",
+#ifdef INET6
+				inetntop(AF_INET6, (char *)&from.sin6_addr, mydummy, MYDUMMY_SIZE)
+#else
+				inetntoa((char *)&from.sin_addr)
+#endif
+				);
+			report_error(buf, &me);
 			return;
 		    }
 	    }

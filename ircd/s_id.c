@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_id.c,v 1.9 1999/07/27 11:26:37 chopin Exp $";
+static  char rcsid[] = "@(#)$Id: s_id.c,v 1.9.2.2 2001/05/13 19:27:14 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -73,7 +73,7 @@ time_t l;
     idrpl[CHIDLEN] = '\0';
     do
 	{
-	    idrpl[c] = id_alphabet[1 + l % CHIDNB];
+	    idrpl[c] = id_alphabet[l % CHIDNB];
 	    l /= CHIDNB;
 	}
     while (c-- > 0);
@@ -147,7 +147,7 @@ aChannel *chptr;
     chptr->nextch = idcache;
     idcache = chptr;
     istat.is_cchan++;
-    istat.is_cchanmem -= sizeof(aChannel) + strlen(chptr->chname);
+    istat.is_cchanmem += sizeof(aChannel) + strlen(chptr->chname);
 }
 
 /* check_chid: checks if a (short) channel name is in the cache

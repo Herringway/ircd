@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.65.2.1 2000/02/10 18:56:13 q Exp $";
+static  char rcsid[] = "@(#)$Id: s_serv.c,v 1.65.2.7 2001/10/19 21:09:10 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -706,27 +706,22 @@ Reg	aClient	*cptr;
 	    }
 
 #ifdef CRYPT_LINK_PASSWORD
-	/* use first two chars of the password they send in as salt */
+	/* pass whole aconf->passwd as salt, let crypt() deal with it */
 
-	/* passwd may be NULL. Head it off at the pass... */
 	if (*cptr->passwd)
 	    {
-		char    salt[3];
 		extern  char *crypt();
 
-		/* Determine if MD5 or DES */
-                if (strncmp(aconf->passwd, "$1$", 3))
+		encr = crypt(cptr->passwd, aconf->passwd);
+		if (encr == NULL)
 		    {
-			salt[0] = aconf->passwd[0];
-			salt[1] = aconf->passwd[1];
+			ircstp->is_ref++;
+			sendto_one(cptr, "ERROR :No Access (crypt failed) %s",
+			  	inpath);
+			sendto_flag(SCH_ERROR,
+			    	"Access denied (crypt failed) %s", inpath);
+			return exit_client(cptr, cptr, &me, "Bad Password");
 		    }
-		else
-		    {
-			salt[0] = aconf->passwd[3];
-			salt[1] = aconf->passwd[4];
-		    }
-		salt[2] = '\0';
-		encr = crypt(cptr->passwd, salt);
 	    }
 	else
 		encr = "";
@@ -1374,7 +1369,7 @@ char	*parv[];
 	if (IsServer(cptr) &&
 	    (stat != 'd' && stat != 'p' && stat != 'q' && stat != 's' &&
 	     stat != 'u' && stat != 'v') &&
-	    !(stat == 'o' && IsOper(sptr)))
+	    !((stat == 'o' || stat == 'c') && IsOper(sptr)))
 	    {
 		if (check_link(cptr))
 		    {
@@ -1825,7 +1820,7 @@ char	*parv[];
 	if (!aconf)
 	    {
 	      sendto_one(sptr,
-			 "NOTICE %s :Connect: Host %s not listed in irc.conf",
+			 "NOTICE %s :Connect: Host %s not listed in ircd.conf",
 			 parv[0], parv[1]);
 	      return 0;
 	    }
@@ -2015,6 +2010,7 @@ char	*parv[];
 	char	killer[HOSTLEN * 2 + USERLEN + 5];
 
 	strcpy(killer, get_client_name(sptr, TRUE));
+	SPRINTF(buf, "RESTART by %s", get_client_name(sptr, TRUE));
 	for (i = 0; i <= highest_fd; i++)
 	    {
 		if (!(acptr = local[i]))
@@ -2036,7 +2032,6 @@ char	*parv[];
 	    }
 	flush_connections(me.fd);
 
-	SPRINTF(buf, "RESTART by %s", get_client_name(sptr, TRUE));
 	restart(buf);
 	/*NOT REACHED*/
 	return 0;
@@ -2140,7 +2135,7 @@ char	*parv[];
 		case STAT_ME:
 			break;
 		case STAT_UNKNOWN:
-			if (IsAnOper(sptr) || MyClient(sptr))
+			if (IsAnOper(sptr) || (MyPerson(sptr) && SendWallops(sptr)))
 				sendto_one(sptr,
 					   rpl_str(RPL_TRACEUNKNOWN, parv[0]),
 					   class, name);
@@ -2149,15 +2144,6 @@ char	*parv[];
 			/* Only opers see users if there is a wildcard
 			 * but anyone can see all the opers.
 			 */
-/*
-			if (IsOper(sptr)  &&
-			    (MyClient(sptr) || !(dow && IsInvisible(acptr)))
-			    || !dow || IsAnOper(acptr))
-			    {
-			if (IsOper(sptr) && !(dow || IsInvisible(acptr)) ||
-			    (IsOper(sptr) && IsLocal(sptr)) ||
-			    !dow || IsAnOper(acptr))
-*/
 			if (IsAnOper(acptr))
 				sendto_one(sptr,
 					   rpl_str(RPL_TRACEOPERATOR, parv[0]),
@@ -2166,17 +2152,6 @@ char	*parv[];
 				sendto_one(sptr,
 					   rpl_str(RPL_TRACEUSER, parv[0]),
 					   class, name);
-/*
-			    {
-				if (IsAnOper(acptr))
-					sendto_one(sptr,
-						   rpl_str(RPL_TRACEOPERATOR,
-						   parv[0]), class, name);
-				else
-					sendto_one(sptr, rpl_str(RPL_TRACEUSER,
-						   parv[0]), class, name);
-			    }
-*/
 			break;
 		case STAT_SERVER:
 			if (acptr->serv->user)

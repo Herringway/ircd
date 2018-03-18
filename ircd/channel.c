@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static	char rcsid[] = "@(#)$Id: channel.c,v 1.109.2.6 2000/05/09 15:47:27 chopin Exp $";
+static	char rcsid[] = "@(#)$Id: channel.c,v 1.109.2.21 2001/07/07 14:29:33 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -669,10 +669,17 @@ char	flag, *chname;
 	int	count = 0, send = 0;
 
 	cp = modebuf + strlen(modebuf);
-	if (*parabuf)	/* mode +l or +k xx */
-		count = strlen(modebuf)-1;
+	if (*parabuf)
+	{
+		/*
+		** we have some modes in parabuf,
+		** so check how many of them.
+		** however, don't count initial '+'
+		*/
+		count = strlen(modebuf) - 1;
+	}
 	for (lp = top; lp; lp = lp->next)
-	    {
+	{
 		if (!(lp->flags & mask))
 			continue;
 		if (mask == CHFL_BAN || mask == CHFL_EXCEPTION ||
@@ -681,34 +688,58 @@ char	flag, *chname;
 		else
 			name = lp->value.cptr->name;
 		if (strlen(parabuf) + strlen(name) + 10 < (size_t) MODEBUFLEN)
-		    {
-			(void)strcat(parabuf, " ");
+		{
+			if (*parabuf)
+			{
+				(void)strcat(parabuf, " ");
+			}
 			(void)strcat(parabuf, name);
 			count++;
 			*cp++ = flag;
 			*cp = '\0';
-		    }
-		else if (*parabuf)
+		}
+		else
+		{
+			if (*parabuf)
+			{
+				send = 1;
+			}
+		}
+		if (count == MAXMODEPARAMS)
+		{
 			send = 1;
-		if (count == 3)
-			send = 1;
+		}
 		if (send)
-		    {
+		{
+			/*
+			** send out MODEs, it's either MAXMODEPARAMS of them
+			** or long enough that they filled up parabuf
+			*/
 			sendto_one(cptr, ":%s MODE %s %s %s",
 				   ME, chname, modebuf, parabuf);
 			send = 0;
 			*parabuf = '\0';
 			cp = modebuf;
 			*cp++ = '+';
-			if (count != 3)
-			    {
+			if (count != MAXMODEPARAMS)
+			{
+				/*
+				** we weren't able to fit another 'name'
+				** into parabuf, so we have to send it
+				** in another turn, appending it now to
+				** empty parabuf and setting count to 1
+				*/
 				(void)strcpy(parabuf, name);
 				*cp++ = flag;
-			    }
-			count = 0;
+				count = 1;
+			}
+			else
+			{
+				count = 0;
+			}
 			*cp = '\0';
-		    }
-	    }
+		}
+	}
 }
 
 /*
@@ -933,7 +964,7 @@ char	*parv[];
 					modebuf[1] = '\0';
 					channel_modes(&me, modebuf, parabuf,
 						      chptr);
-				check_services_butone(SERVICE_WANT_MODE,
+					check_services_butone(SERVICE_WANT_MODE,
 						      NULL, sptr,
 						      "MODE %s %s",
 						      name, modebuf);
@@ -1145,6 +1176,10 @@ char	*parv[], *mbuf, *pbuf;
 				Reg	u_char	*s;
 
 				for (s = (u_char *)*parv; *s; )
+				    {
+					/* comma cannot be inside key --Beeth */
+					if (*s == ',') 
+						*s = '.';
 					if (*s > 0x7f)
 						if (*s > 0xa0)
 							*s++ &= 0x7f;
@@ -1152,6 +1187,7 @@ char	*parv[], *mbuf, *pbuf;
 							*s = '\0';
 					else
 						s++;
+				    }
 			}
 
 			if (!**parv)
@@ -1184,8 +1220,7 @@ char	*parv[], *mbuf, *pbuf;
 			    }
 			else if (whatt == MODE_DEL)
 			    {
-				if (ischop && (mycmp(mode->key, *parv) == 0 ||
-				     IsServer(cptr)))
+				if (ischop || IsServer(cptr))
 				    {
 					lp = &chops[opcnt++];
 					lp->value.cp = mode->key;
@@ -1367,7 +1402,7 @@ char	*parv[], *mbuf, *pbuf;
 				   cptr->name), "MODE +l");
 			break;
 		case 'i' : /* falls through for default case */
-			if (whatt == MODE_DEL)
+			if (whatt == MODE_DEL && ischop)
 				while ((lp = chptr->invites))
 					del_invite(lp->value.cptr, chptr);
 		default:
@@ -2293,7 +2328,8 @@ Reg	aClient *cptr, *sptr;
 int	parc;
 char	*parv[];
 {
-	char nbuf[BUFSIZE], *q, *name, *target, *p, mbuf[4];
+	char nbuf[BUFSIZE], *q, *name, *target, mbuf[MAXMODEPARAMS + 1];
+	char *p = NULL;
 	int chop, cnt = 0, nj = 0;
 	aChannel *chptr = NULL;
 	aClient *acptr;
@@ -2317,14 +2353,14 @@ char	*parv[];
 				/* actually never sends in a JOIN ^G */
 				if (*(target+2) == '+')
 				    {
-					strcpy(mbuf, "\007Ov");
+					strcpy(mbuf, "\007ov");
 					chop = CHFL_UNIQOP|CHFL_CHANOP| \
 					  CHFL_VOICE;
 					name = target + 3;
 				    }
 				else
 				    {
-					strcpy(mbuf, "\007O");
+					strcpy(mbuf, "\007o");
 					chop = CHFL_UNIQOP|CHFL_CHANOP;
 					name = target + 2;
 				    }
@@ -2447,7 +2483,7 @@ char	*parv[];
 					cnt = 0;
 				break;
 			    }
-			if (cnt == 3)
+			if (cnt == MAXMODEPARAMS)
 			    {
 				sendto_channel_butserv(chptr, &me,
 						       ":%s MODE %s +%s %s",
@@ -2556,6 +2592,7 @@ char	*parv[];
 	aChannel *chptr;
 	int	chasing = 0, penalty = 0;
 	char	*comment, *name, *p = NULL, *user, *p2 = NULL;
+	char	*tmp, *tmp2;
 	int	mlen, len = 0, nlen;
 
 	if (parc < 3 || *parv[1] == '\0')
@@ -2570,12 +2607,13 @@ char	*parv[];
 	if (strlen(comment) > (size_t) TOPICLEN)
 		comment[TOPICLEN] = '\0';
 
-	*nickbuf = *buf = '\0';
+	/* strlen(":parv[0] KICK ") */
 	mlen = 7 + strlen(parv[0]);
 
 	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
-		if (penalty++ >= MAXPENALTY && MyPerson(sptr))
+		*nickbuf = '\0';
+		if (penalty >= MAXPENALTY && MyPerson(sptr))
 			break;
 		chptr = get_channel(sptr, name, !CREATE);
 		if (!chptr)
@@ -2583,17 +2621,19 @@ char	*parv[];
 			if (MyPerson(sptr))
 				sendto_one(sptr,
 					   err_str(ERR_NOSUCHCHANNEL, parv[0]),
-				   	   name);
+					   name);
+			penalty += 2;
 			continue;
 		    }
 		if (check_channelmask(sptr, cptr, name))
 			continue;
-                if (!UseModes(name))
-                    {
-                        sendto_one(sptr, err_str(ERR_NOCHANMODES, parv[0]),
+		if (!UseModes(name))
+		    {
+			sendto_one(sptr, err_str(ERR_NOCHANMODES, parv[0]),
 				   name);
-                        continue;
-                    }
+			penalty += 2;
+			continue;
+		    }
 		if (!IsServer(sptr) && !is_chan_op(sptr, chptr))
 		    {
 			if (!IsMember(sptr, chptr))
@@ -2602,20 +2642,13 @@ char	*parv[];
 			else
 				sendto_one(sptr, err_str(ERR_CHANOPRIVSNEEDED,
 					    parv[0]), chptr->chname);
+			penalty += 2;
 			continue;
 		    }
-		if (len + mlen + strlen(name) < (size_t) BUFSIZE / 2)
-		    {
-			if (*buf)
-				(void)strcat(buf, ",");
-			(void)strcat(buf, name);
-			len += strlen(name) + 1;
-		    }
-		else
-			continue;
-		nlen = 0;
 
-		for (; (user = strtoken(&p2, parv[2], ",")); parv[2] = NULL)
+		nlen = 0;
+		tmp = mystrdup(parv[2]);
+		for (tmp2 = tmp; (user = strtoken(&p2, tmp2, ",")); tmp2 = NULL)
 		    {
 			penalty++;
 			if (!(who = find_chasing(sptr, user, &chasing)))
@@ -2628,14 +2661,21 @@ char	*parv[];
 				sendto_channel_butserv(chptr, sptr,
 						":%s KICK %s %s :%s", parv[0],
 						name, who->name, comment);
-				/* Don't send &local &kicks out */
+				/* Don't send &local kicks out */
+				/* Send !channels and #chan:*.els kicks only
+				   to servers that understand those channels.
+				   I think it would be better to use different buffers
+				   for each type and do them in one sweep at the end.
+				   Given MAXPENALTY, however, it wouldn't be used.
+				   sendto_match_servs() is used, since it does no action
+				   upon chptr being &channel --Beeth */
 				if (*chptr->chname != '&' &&
 				    *chptr->chname != '!' &&
 				    index(chptr->chname, ':') == NULL) {
 					if (*nickbuf)
 						(void)strcat(nickbuf, ",");
 					(void)strcat(nickbuf, who->name);
-					nlen += strlen(who->name);
+					nlen += strlen(who->name) + 1; /* 1 for comma --B. */
 				    }
 				else
 					sendto_match_servs(chptr, cptr,
@@ -2644,7 +2684,7 @@ char	*parv[];
 						   who->name, comment);
 				remove_user_from_channel(who,chptr);
 				penalty += 2;
-				if (penalty > MAXPENALTY && MyPerson(sptr))
+				if (penalty >= MAXPENALTY && MyPerson(sptr))
 					break;
 			    }
 			else
@@ -2652,11 +2692,12 @@ char	*parv[];
 					   err_str(ERR_USERNOTINCHANNEL,
 					   parv[0]), user, name);
 		    } /* loop on parv[2] */
+		MyFree(tmp);
+		if (*nickbuf)
+			sendto_serv_butone(cptr, ":%s KICK %s %s :%s",
+					   parv[0], name, nickbuf, comment);
 	    } /* loop on parv[1] */
 
-	if (*buf && *nickbuf)
-		sendto_serv_butone(cptr, ":%s KICK %s %s :%s",
-				   parv[0], buf, nickbuf, comment);
 	return penalty;
 }
 
@@ -2874,7 +2915,7 @@ char	*parv[];
 	char	*name, *p = NULL;
 	int	rlen = 0;
 
-	if (parc > 1 &&
+	if (parc > 2 &&
 	    hunt_server(cptr, sptr, ":%s LIST %s %s", 2, parc, parv))
 		return 10;
 	if (BadPtr(parv[1]))
@@ -2955,7 +2996,7 @@ char	*parv[];
 	int	idx, flag, len, mlen, rlen = 0;
 	char	*s, *para = parc > 1 ? parv[1] : NULL;
 
-	if (parc > 1 &&
+	if (parc > 2 &&
 	    hunt_server(cptr, sptr, ":%s NAMES %s %s", 2, parc, parv))
 		return 10;
 
@@ -3201,9 +3242,10 @@ aChannel *chptr;
     if (chptr->users <= 5 && (now - chptr->history > DELAYCHASETIMELIMIT))
 	{
 	    /* few users, no recent split: this is really a small channel */
-	    char mbuf[4], nbuf[3*(NICKLEN+1)+1];
+	    char mbuf[MAXMODEPARAMS + 1], nbuf[MAXMODEPARAMS*(NICKLEN+1)+1];
 	    int cnt;
 	    
+		mbuf[0] = nbuf[0] = '\0';
 	    lp = chptr->members;
 	    while (lp)
 		{
@@ -3228,10 +3270,10 @@ aChannel *chptr;
 				   ME, chptr->chname, now - chptr->reop);
 	    op.flags = MODE_ADD|MODE_CHANOP;
 	    lp = chptr->members;
-	    cnt = 3;
+	    cnt = 0;
 	    while (lp)
 		{
-		    if (cnt == 3)
+		    if (cnt == MAXMODEPARAMS)
 			{
 			    mbuf[cnt] = '\0';
 			    if (lp != chptr->members)

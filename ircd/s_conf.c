@@ -48,7 +48,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.42.2.4 2000/05/29 19:38:25 q Exp $";
+static  char rcsid[] = "@(#)$Id: s_conf.c,v 1.42.2.15 2001/07/05 22:08:58 chopin Exp $";
 #endif
 
 #include "os.h"
@@ -97,7 +97,7 @@ aClient *cptr;
 	u_long	lmask;
 #ifdef	INET6
 	int	j;
-#endif;
+#endif
  
 	strncpyzt(dummy, mask, sizeof(dummy));
 	mask = dummy;
@@ -112,10 +112,15 @@ aClient *cptr;
 		goto badmask;
 	*p = '\0';
 	
-	m = atoi(p + 1);
+	if (sscanf(p + 1, "%d", &m) != 1)
+	{
+		goto badmask;
+	}
 #ifndef	INET6
 	if (m < 0 || m > 32)
 		goto badmask;
+	if (!m)
+		return 0;       /* x.x.x.x/0 always matches */
 	lmask = htonl((u_long)0xffffffffL << (32 - m));
 	addr.s_addr = inetaddr(mask);
 	return ((addr.s_addr ^ cptr->ip.s_addr) & lmask) ? 1 : 0;
@@ -123,9 +128,18 @@ aClient *cptr;
 	if (m < 0 || m > 128)
 		goto badmask;
 
-	inet_pton(AF_INET6, mask, (void *)addr.s6_addr);
+	if (inetpton(AF_INET6, mask, (void *)addr.s6_addr) != 1)
+	{
+		return -1;
+	}
 
-	j = m & 0x1F;	/* mumber not mutliple of 32 bits */
+	/* Make sure that the ipv4 notation still works. */
+	if (IN6_IS_ADDR_V4MAPPED(&addr) && m < 96)
+	{
+		m += 96;
+	}
+
+	j = m & 0x1F;	/* number not mutliple of 32 bits */
 	m >>= 5;	/* number of 32 bits */
 
 	if (m && memcmp((void *)(addr.s6_addr), 
@@ -535,6 +549,48 @@ int	statmask;
 	return NULL;
 }
 
+/*
+ * find an O-line which matches the hostname and has the same "name".
+ */
+aConfItem *find_Oline(name, cptr)
+char	*name;
+aClient	*cptr;
+{
+	Reg	aConfItem *tmp;
+	char	userhost[USERLEN+HOSTLEN+3];
+	char	userip[USERLEN+HOSTLEN+3];
+
+	SPRINTF(userhost, "%s@%s", cptr->username, cptr->sockhost);
+	SPRINTF(userip, "%s@%s", cptr->username, 
+#ifdef INET6
+		(char *)inetntop(AF_INET6, (char *)&cptr->ip, mydummy,
+			MYDUMMY_SIZE)
+#else
+		(char *)inetntoa((char *)&cptr->ip)
+#endif
+	);
+
+
+	for (tmp = conf; tmp; tmp = tmp->next)
+	    {
+		if (!(tmp->status & (CONF_OPS)) || !tmp->name || !tmp->host ||
+			mycmp(tmp->name, name))
+			continue;
+		/*
+		** Accept if the *real* hostname matches the host field or
+		** the ip does.
+		*/
+		if (match(tmp->host, userhost) && match(tmp->host, userip) &&
+			(!strchr(tmp->host, '/') 
+			|| match_ipmask(tmp->host, cptr)))
+			continue;
+		if (tmp->clients < MaxLinks(Class(tmp)))
+			return tmp;
+	    }
+	return NULL;
+}
+
+
 aConfItem *find_conf_name(name, statmask)
 char	*name;
 int	statmask;
@@ -695,6 +751,8 @@ int	sig;
 	    {
 		sendto_flag(SCH_NOTICE,
 			    "Got signal SIGHUP, reloading ircd.conf file");
+		logfiles_close();
+		logfiles_open();
 #ifdef	ULTRIX
 		if (fork() > 0)
 			exit(0);
@@ -712,7 +770,7 @@ int	sig;
 			 * this....-avalon
 			 */
 			acptr->hostp = NULL;
-#if defined(R_LINES_REHASH) && !defined(R_LINES_OFTEN)
+#if defined(R_LINES) && ( defined(R_LINES_REHASH) && !defined(R_LINES_OFTEN) )
 			if (find_restrict(acptr))
 			    {
 				sendto_flag(SCH_NOTICE,
@@ -764,7 +822,7 @@ int	sig;
 	for (cltmp = NextClass(FirstClass()); cltmp; cltmp = NextClass(cltmp))
 		MaxLinks(cltmp) = -1;
 
-	if (sig != 2)
+	if (sig == 2)
 		flush_cache();
 	(void) initconf(0);
 	close_listeners();
@@ -869,7 +927,7 @@ char	*orig;
 		s++;
 	    }
 
-	i = inet_pton(AF_INET6, orig, addr.s6_addr);
+	i = inetpton(AF_INET6, orig, addr.s6_addr);
 
 	if (i > 0)
 	    {
@@ -1149,32 +1207,24 @@ int	opt;
                 ** for it and make the conf_line illegal and delete it.
                 */
 		if (aconf->status & CONF_CLASS)
-		    {
+		{
 			if (atoi(aconf->host) >= 0)
 				add_class(atoi(aconf->host),
 					  atoi(aconf->passwd),
 					  atoi(aconf->name), aconf->port,
 					  tmp ? atoi(tmp) : 0,
-/*					  tmp3 ? atoi(tmp3) : 0,
-**					  tmp3 && index(tmp3, '.') ?
-**					  atoi(index(tmp3, '.') + 1) : 0,
-** the next 3 lines should be replaced by the previous sometime in the
-** future.  It is only kept for "backward" compatibility and not needed,
-** but I'm in good mood today -krys
-*/
-					  tmp3 ? atoi(tmp3) : (atoi(aconf->name) > 0) ? atoi(aconf->name) : 0,
-					  tmp3 && index(tmp3, '.') ?
-					  atoi(index(tmp3, '.') + 1) : (atoi(aconf->name) < 0) ? -1 * atoi(aconf->name) : 0,
-/* end of backward compatibility insanity */
- 					  tmp4 ? atoi(tmp4) : 0,
-					  tmp4 && index(tmp4, '.') ?
-					  atoi(index(tmp4, '.') + 1) : 0);
+					  tmp3 ? atoi(tmp3) : 1,
+					  (tmp3 && index(tmp3, '.')) ?
+					  atoi(index(tmp3, '.') + 1) : 1,
+ 					  tmp4 ? atoi(tmp4) : 1,
+					  (tmp4 && index(tmp4, '.')) ?
+					  atoi(index(tmp4, '.') + 1) : 1);
 			continue;
-		    }
+		}
 		/*
-                ** associate each conf line with a class by using a pointer
-                ** to the correct class record. -avalon
-                */
+		** associate each conf line with a class by using a pointer
+		** to the correct class record. -avalon
+		*/
 		if (aconf->status & (CONF_CLIENT_MASK|CONF_LISTEN_PORT))
 		    {
 			if (Class(aconf) == 0)
@@ -1333,7 +1383,7 @@ Reg	aConfItem	*aconf;
 	ln.flags = ASYNC_CONF;
 
 #ifdef INET6
-	if(inet_pton(AF_INET6, s, aconf->ipnum.s6_addr))
+	if(inetpton(AF_INET6, s, aconf->ipnum.s6_addr))
 		;
 #else
 	if (isdigit(*s))
