@@ -679,13 +679,13 @@ char	*parv[], *mbuf, *pbuf;
 			/* check now so we eat the parameter if present */
 			if (keychange)
 				break;
-			*parv = check_string(*parv);
 			{
 				u_char	*s;
 
 				for (s = (u_char *)*parv; *s; s++)
 					*s &= 0x7f;
 			}
+			*parv = check_string(*parv);
 			if (MyClient(sptr) && opcnt >= MAXMODEPARAMS)
 				break;
 			if (!fm)
