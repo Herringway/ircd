@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)packet.c	2.12 1/30/94 (C) 1988 University of Oulu, \
+static  char sccsid[] = "%W% %G% (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
  
@@ -42,13 +42,14 @@ Computing Center and Jarkko Oikarinen";
 **	necessary fields (buffer etc..)
 */
 int	dopacket(cptr, buffer, length)
-Reg3	aClient *cptr;
+Reg	aClient *cptr;
 char	*buffer;
-Reg4	int	length;
+Reg	int	length;
 {
-	Reg1	char	*ch1;
-	Reg2	char	*ch2;
+	Reg	char	*ch1;
+	Reg	char	*ch2, *bufptr;
 	aClient	*acpt = cptr->acpt;
+	int	r = 1;
  
 	me.receiveB += length; /* Update bytes received */
 	cptr->receiveB += length;
@@ -71,11 +72,14 @@ Reg4	int	length;
 		me.receiveK += (me.receiveB >> 10);
 		me.receiveB &= 0x03ff;
 	    }
-	ch1 = cptr->buffer + cptr->count;
+	bufptr = cptr->buffer;
+	ch1 = bufptr + cptr->count;
 	ch2 = buffer;
 	while (--length >= 0)
 	    {
-		*ch1 = *ch2++;
+		Reg	char	c;
+
+		c = (*ch1 = *ch2++);
 		/*
 		 * Yuck.  Stuck.  To make sure we stay backward compatible,
 		 * we must assume that either CR or LF terminates the message
@@ -83,9 +87,9 @@ Reg4	int	length;
 		 * of messages, backward compatibility is lost and major
 		 * problems will arise. - Avalon
 		 */
-		if (*ch1 == '\n' || *ch1 == '\r')
+		if ((c <= '\r') && (c == '\n' || c == '\r'))
 		    {
-			if (ch1 == cptr->buffer)
+			if (ch1 == bufptr)
 				continue; /* Skip extra LF/CR's */
 			*ch1 = '\0';
 			me.receiveM += 1; /* Update messages received */
@@ -96,7 +100,7 @@ Reg4	int	length;
 					 ** FLUSH_BUFFER without removing the
 					 ** structure pointed by cptr... --msa
 					 */
-			if (parse(cptr, cptr->buffer, ch1, msgtab) ==
+			if ((r = parse(cptr, bufptr, ch1)) ==
 			    FLUSH_BUFFER)
 				/*
 				** FLUSH_BUFFER means actually that cptr
@@ -109,14 +113,18 @@ Reg4	int	length;
 			** FLUSH_BUFFER here).  - avalon
 			*/
 			if (cptr->flags & FLAGS_DEADSOCKET)
+			    {
+				if (cptr->exitc == EXITC_REG)
+					cptr->exitc = EXITC_DEAD;
 				return exit_client(cptr, cptr, &me,
 						   "Dead Socket");
+			    }
 #endif
-			ch1 = cptr->buffer;
+			ch1 = bufptr;
 		    }
-		else if (ch1 < cptr->buffer + (sizeof(cptr->buffer)-1))
+		else if (ch1 < bufptr + (sizeof(cptr->buffer)-1))
 			ch1++; /* There is always room for the null */
 	    }
-	cptr->count = ch1 - cptr->buffer;
-	return 0;
+	cptr->count = ch1 - bufptr;
+	return r;
 }

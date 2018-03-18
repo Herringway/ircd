@@ -22,6 +22,6 @@ MANDIR=/usr/local/man
 all:
 
 install: all
-	-../bsdinstall -c -m 644 ircd.8 ${MANDIR}/man8
-#	-../bsdinstall -c -m 644 irc.1 ${MANDIR}/man1
+	-${INSTALL} -c -m 644 ircd.8 ${MANDIR}/man8
+	-${INSTALL} -c -m 644 irc.1 ${MANDIR}/man1
 

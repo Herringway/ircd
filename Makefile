@@ -17,131 +17,31 @@
 #*   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #*/
 
-CC=cc
-RM=/bin/rm
-INCLUDEDIR=../include
+rev=`support/rev.sh`
 
-# Default flags:
-CFLAGS= -I$(INCLUDEDIR) -O2
-IRCDLIBS=-lgnumalloc -lcrypt
-IRCLIBS=-lcurses -ltermcap -lgnumalloc 
-#
-# use the following on MIPS:
-#CFLAGS= -systype bsd43 -DSYSTYPE_BSD43 -I$(INCLUDEDIR)
-# For Irix 4.x (SGI), use the following:
-#CFLAGS= -g -cckr -I$(INCLUDEDIR)
-#
-# on NEXT use:
-#CFLAGS=-bsd -I$(INCLUDEDIR)
-#on NeXT other than 2.0:
-#IRCDLIBS=-lsys_s
-#
-# AIX 370 flags
-#CFLAGS=-D_BSD -Hxa -I$(INCLUDEDIR)
-#IRCDLIBS=-lbsd
-#IRCLIBS=-lcurses -lcur
-#
-# Dynix/ptx V2.0.x
-#CFLAGS= -I$(INCLUDEDIR) -O -Xo
-#IRCDLIBS= -lsocket -linet -lnsl -lseq
-#IRCLIBS=-ltermcap -lcurses -lsocket -linet -lnsl -lseq
-# 
-# Dynix/ptx V1.x.x
-#IRCDLIBS= -lsocket -linet -lnsl -lseq
-#
-#use the following on SUN OS without nameserver libraries inside libc
-#IRCDLIBS=-lresolv
-#
-# Solaris 2
-#IRCDLIBS=-lsocket -lnsl
-#IRCLIBS=-lcurses -ltermcap -lresolv -lsocket -lnsl
-#
-# ESIX
-#CFLAGS=-O -I$(INCLUDEDIR) -I/usr/ucbinclude
-#IRCDLIBS=-L/usr/ucblib -L/usr/lib -lsocket -lucb -lns -lnsl
-#
-# LDFLAGS - flags to send the loader (ld). SunOS users may want to add
-# -Bstatic here.
-#
-#LDFLAGS=-Bstatic
-#
-#Dell SVR4
-#CC=gcc
-#CFLAGS= -I$(INCLUDEDIR) -O2
-#IRCDLIBS=-lsocket -lnsl -lucb
-#IRCLIBS=-lcurses -lresolv -lsocket -lnsl -lucb
-
-
-
-# IRCDMODE is the mode you want the binary to be.
-# The 4 at the front is important (allows for setuidness)
-#
-# WARNING: if you are making ircd SUID or SGID, check config.h to make sure
-#          you are not defining CMDLINE_CONFIG 
-IRCDMODE = 711
-
-# IRCDDIR must be the same as DPATH in include/config.h
-#
-IRCDDIR=${PREFIX}/lib/ircd
-
-SHELL=/bin/sh
-SUBDIRS=common ircd # irc
-BINDIR=${PREFIX}/bin
-MANDIR=${PREFIX}/man
-INSTALL=/usr/bin/install
-
-MAKE=make 'CFLAGS=${CFLAGS}' 'CC=${CC}' 'IRCDLIBS=${IRCDLIBS}' \
-	'LDFLAGS=${LDFLAGS}' 'IRCDMODE=${IRCDMODE}' 'BINDIR=${BINDIR}' \
-	'INSTALL=${INSTALL}' 'IRCLIBS=${IRCLIBS}' 'INCLUDEDIR=${INCLUDEDIR}' \
-	'IRCDDIR=${IRCDDIR}' 'MANDIR=${MANDIR}'
-
-all:	build
-
-server:
-	@echo 'Making server'; cd ircd; ${MAKE} build; cd ..;
-
-client:
-	@echo 'Making client'; cd irc; ${MAKE} build; cd ..;
-
-build:
-	-@if [ ! -f include/setup.h ] ; then \
-		echo "Hmm...doesn't look like you've run Config..."; \
-		echo "Doing so now."; \
-		sh Config; \
+all install config configure:
+	@if [ -d ${rev} -a -f ${rev}/Makefile ]; then \
+		echo "Configuration for ${rev} already exists"; \
+		echo "Please \"cd ${rev}\" first"; \
+	else \
+		echo "Configuring ${rev}"; \
+		mkdir -p ${rev}; \
+		cd ${rev}; \
+		sh ../support/configure ${CONFIGARGS}; \
+		if [ ! -f config.h ]; then \
+			/bin/cp ../include/config.h.dist config.h; \
+		fi; \
+		/bin/cp ../support/Makefile.irc ../support/Makefile.ircd .; \
+		cd ..; \
+		echo "Next cd ${rev}, edit config.h and run make to build"; \
 	fi
-	@for i in $(SUBDIRS); do \
-		echo "Building $$i";\
-		cd $$i;\
-		${MAKE} build; cd ..;\
-	done
 
 clean:
-	${RM} -f *~ #* core
-	@for i in $(SUBDIRS); do \
-		echo "Cleaning $$i";\
-		cd $$i;\
-		${MAKE} clean; cd ..;\
-	done
-	-@if [ -f include/setup.h ] ; then \
-	echo "To really restart installation, remove include/setup.h" ; \
-	fi
+	@echo 'To make clean move to the arch/OS specific directory'
 
-depend:
-	@for i in $(SUBDIRS); do \
-		echo "Making dependencies in $$i";\
-		cd $$i;\
-		${MAKE} depend; cd ..;\
-	done
-
-install: all
-	chmod +x ./bsdinstall
-	@for i in ircd doc; do \
-		echo "Installing $$i";\
-		cd $$i;\
-		${MAKE} install; cd ..;\
-	done
-
+distclean realclean: clean
+	@echo "To make $@ remove all the arch/OS specific directories"
 
 rcs:
-	cii -H -R Makefile common include ircd
+	cii -H -R Makefile common doc include irc ircd support
 

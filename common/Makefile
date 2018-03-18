@@ -17,14 +17,15 @@
 #*   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #*/
 
-CC=cc
+CC=gcc
 RM=/bin/rm
 INCLUDE=../include
 
 # For MIPS, use:
 # CFLAGS=-O -systype bsd43 -I${INCLUDE}
 # and otherwise:
-CFLAGS=-gx -I${INCLUDE}
+#CFLAGS=-O2 -I${INCLUDE}
+CFLAGS=-g -I${INCLUDE}
 
 
 OBJS=bsd.o dbuf.o packet.o send.o match.o parse.o support.o inet_addr.o

@@ -20,7 +20,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_numeric.c	2.14 1/30/94 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_numeric.c	1.1 1/21/95 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -59,7 +59,7 @@ char	*parv[];
 	int	i;
 
 	if (parc < 1 || !IsServer(sptr))
-		return 0;
+		return 1;
 	/* Remap low number numerics. */
 	if (numeric < 100)
 		numeric += 100;
@@ -96,38 +96,37 @@ char	*parv[];
 			** with numerics which can happen with nick collisions.
 			** - Avalon
 			*/
-			if (!IsMe(acptr) && IsPerson(acptr))
+			if (IsMe(acptr))
+				sendto_flag(SCH_NUM, "From %s: %s %d %s %s.",
+					    cptr->name, sptr->name,
+					    numeric, nick, buffer);
+			else if (IsPerson(acptr) && acptr->from != cptr)
 				sendto_prefix_one(acptr, sptr,":%s %d %s%s",
 					parv[0], numeric, nick, buffer);
 			else if (IsServer(acptr) && acptr->from != cptr)
 				sendto_prefix_one(acptr, sptr,":%s %d %s%s",
 					parv[0], numeric, nick, buffer);
-#ifdef SHOW_GHOSTS
-			else	/* Test to see # of useless numerics */
-				sendto_ops("Bad numeric (:%s %d %s%s)",
-					   parv[0], numeric, nick, buffer);
-#endif
+			else if (acptr->from == cptr)
+				sendto_flag(SCH_NOTICE,
+					  "Dropping numeric %d from %s for %s",
+					    numeric,
+					    get_client_name(cptr, TRUE),
+					    acptr->name);
 		    }
+		/* any reason why no cptr == acptr->from checks here? -krys */
+		else if ((acptr = find_nickserv(nick, (aClient *)NULL)))
+			sendto_prefix_one(acptr, sptr,":%s %d %s%s",
+				parv[0], numeric, nick, buffer);
 		else if ((acptr = find_server(nick, (aClient *)NULL)))
 		    {
 			if (!IsMe(acptr) && acptr->from != cptr)
 				sendto_prefix_one(acptr, sptr,":%s %d %s%s",
 					parv[0], numeric, nick, buffer);
-#ifdef SHOW_GHOSTS
-			else	/* Test to see # of useless numerics */
-				sendto_ops("Bad numeric (:%s %d %s%s)",
-					   parv[0], numeric, nick, buffer);
-#endif
 		    }
 		else if ((chptr = find_channel(nick, (aChannel *)NULL)))
 			sendto_channel_butone(cptr,sptr,chptr,":%s %d %s%s",
 					      parv[0],
 					      numeric, chptr->chname, buffer);
-#ifdef SHOW_GHOSTS
-		else	/* Test to see # of useless numerics */
-			sendto_ops("Bad numeric (:%s %d %s%s)",
-				   parv[0], numeric, nick, buffer);
-#endif
 	    }
-	return 0;
+	return 1;
 }

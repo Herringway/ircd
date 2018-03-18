@@ -20,16 +20,14 @@
 #ifndef	__common_include__
 #define __common_include__
 
-#ifdef	PARAMH
-#include <sys/param.h>
+#ifdef HAVE_SYS_CDEFS_H
+#include <sys/cdefs.h>
+#else
+#include "cdefs.h"
 #endif
 
-#ifndef PROTO
-#if __STDC__
-#	define PROTO(x)	x
-#else
-#	define PROTO(x)	()
-#endif
+#ifdef	HAVE_SYS_PARAM_H
+#include <sys/param.h>
 #endif
 
 #ifndef NULL
@@ -47,42 +45,34 @@
 #define FALSE (0)
 #define TRUE  (!FALSE)
 
-#include <stdio.h>
-
-#ifndef	MALLOCH
+#if 0
+#ifndef	HAVE_SYS_MALLOC_H
 char	*malloc(), *calloc();
-void	free();
 #else
-#include MALLOCH
+/*#include MALLOCH*/
+#endif
 #endif
 
-extern	int	matches PROTO((char *, char *));
-extern	int	mycmp PROTO((char *, char *));
-extern	int	myncmp PROTO((char *, char *, int));
+extern	char	*collapse __P((char *));
+extern	int	matches __P((char *, char *));
+extern	int	mycmp __P((char *, char *));
+extern	int	myncmp __P((char *, char *, int));
 #ifdef NEED_STRTOK
-extern	char	*strtok PROTO((char *, char *));
+extern	char	*strtok __P((char *, char *));
 #endif
 #ifdef NEED_STRTOKEN
-extern	char	*strtoken PROTO((char **, char *, char *));
+extern	char	*strtoken __P((char **, char *, char *));
 #endif
 #ifdef NEED_INET_ADDR
-extern unsigned long inet_addr PROTO((char *));
+extern unsigned long inet_addr __P((char *));
 #endif
 
 #if defined(NEED_INET_NTOA) || defined(NEED_INET_NETOF)
 #include <netinet/in.h>
 #endif
 
-#ifdef NEED_INET_NTOA
-extern char *inet_ntoa PROTO((struct in_addr));
-#endif
-
-#ifdef NEED_INET_NETOF
-extern int inet_netof PROTO((struct in_addr));
-#endif
-
-extern char *myctime PROTO((time_t));
-extern char *strtoken PROTO((char **, char *, char *));
+extern char *myctime __P((time_t));
+extern char *strtoken __P((char **, char *, char *));
 
 #ifndef MAX
 #define MAX(a, b)	((a) > (b) ? (a) : (b))
@@ -91,7 +81,14 @@ extern char *strtoken PROTO((char **, char *, char *));
 #define MIN(a, b)	((a) < (b) ? (a) : (b))
 #endif
 
-#define DupString(x,y) do{x=MyMalloc(strlen(y)+1);(void)strcpy(x,y);}while(0)
+#ifdef	SPRINTF
+#undef	SPRINTF
+#endif
+#define	SPRINTF	(void) irc_sprintf
+
+#define DupString(x,y) do {x = (char *)MyMalloc(strlen((char *)y) + 1);\
+			   (void)strcpy((char *)x, (char *)y);\
+			  } while(0)
 
 extern unsigned char tolowertab[];
 
@@ -114,7 +111,6 @@ extern unsigned char touppertab[];
 #undef islower
 #undef isupper
 #undef isspace
-#undef iscntrl
 
 extern unsigned char char_atribs[];
 
@@ -125,18 +121,22 @@ extern unsigned char char_atribs[];
 #define DIGIT 16
 #define SPACE 32
 
-#define	iscntrl(c) (char_atribs[(u_char)(c)]&CNTRL)
 #define isalpha(c) (char_atribs[(u_char)(c)]&ALPHA)
 #define isspace(c) (char_atribs[(u_char)(c)]&SPACE)
-#define islower(c) ((char_atribs[(u_char)(c)]&ALPHA) && ((u_char)(c) > 0x5f))
-#define isupper(c) ((char_atribs[(u_char)(c)]&ALPHA) && ((u_char)(c) < 0x60))
+#define islower(c) ((char_atribs[(u_char)(c)]&ALPHA) && \
+		    ((u_char)(c) > (u_char)0x5f))
+#define isupper(c) ((char_atribs[(u_char)(c)]&ALPHA) && \
+		    ((u_char)(c) < (u_char)0x60))
 #define isdigit(c) (char_atribs[(u_char)(c)]&DIGIT)
-#define	isxdigit(c) (isdigit(c) || 'a' <= (c) && (c) <= 'f' || \
-		     'A' <= (c) && (c) <= 'F')
+#define	isxdigit(c) (isdigit(c) || \
+		     (u_char)'a' <= (c) && (c) <= (u_char)'f' || \
+		     (u_char)'A' <= (c) && (c) <= (u_char)'F')
 #define isalnum(c) (char_atribs[(u_char)(c)]&(DIGIT|ALPHA))
 #define isprint(c) (char_atribs[(u_char)(c)]&PRINT)
-#define isascii(c) ((u_char)(c) >= 0 && (u_char)(c) <= 0x7f)
-#define isgraph(c) ((char_atribs[(u_char)(c)]&PRINT) && ((u_char)(c) != 0x32))
+#define isascii(c) (((u_char)(c) >= (u_char)'\0') && \
+		    ((u_char)(c) <= (u_char)0x7f))
+#define isgraph(c) ((char_atribs[(u_char)(c)]&PRINT) && \
+		    ((u_char)(c) != (u_char)0x32))
 #define ispunct(c) (!(char_atribs[(u_char)(c)]&(CNTRL|ALPHA|DIGIT)))
 
 extern char *MyMalloc();

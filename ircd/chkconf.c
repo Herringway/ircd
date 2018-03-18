@@ -18,7 +18,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)chkconf.c	1.9 1/30/94 (C) 1993 Darren Reed";
+static  char sccsid[] = "@(#)chkconf.c	1.1 1/21/95 (C) 1993 Darren Reed";
 #endif
 
 #include "struct.h"
@@ -29,7 +29,7 @@ static  char sccsid[] = "@(#)chkconf.c	1.9 1/30/94 (C) 1993 Darren Reed";
 #include <sys/stat.h>
 #include <fcntl.h>
 #ifdef __hpux
-#include "inet.h"
+# include "inet.h"
 #endif
 #ifdef PCS
 #include <time.h>
@@ -57,17 +57,19 @@ static	char	*configfile = CONFIGFILE;
 static	char	nullfield[] = "";
 static	char	maxsendq[12];
 
+#define	SHOWSTR(x)	((x) ? (x) : "*")
+
 main(argc, argv)
 int	argc;
 char	*argv[];
 {
+	if (argc > 1 && !strncmp(argv[1], "-h", 2)) {
+		(void)fprintf(stderr, "Usage: %s [-h] [-d[#]] [%s]\n",
+			      argv[0], CPATH);
+		exit(0);
+	}
 	new_class(0);
 
-	if (chdir(DPATH))
-	    {
-		perror("chdir");
-		exit(-1);
-	    }
 	if (argc > 1 && !strncmp(argv[1], "-d", 2))
    	    {
 		debugflag = 1;
@@ -77,6 +79,12 @@ char	*argv[];
 	    }
 	if (argc > 1)
 		configfile = argv[1];
+	else if (chdir(DPATH)) {
+		perror("chdir");
+                (void)fprintf(stderr, "%s: Error in daemon path: %s.\n",
+                              argv[0], DPATH);
+		exit(-1);
+	}
 	return validate(initconf());
 }
 
@@ -92,6 +100,11 @@ static	int	openconf()
 #ifdef	M4_PREPROC
 	int	pi[2];
 
+	if (access("ircd.m4", R_OK) == -1)
+	    {
+		(void)fprintf(stderr, "ircd.m4 missing in %s\n", DPATH);
+		return -1;
+	    }
 	if (pipe(pi) == -1)
 		return -1;
 	switch(fork())
@@ -140,6 +153,7 @@ int	opt;
 	aConfItem *aconf = NULL, *ctop = NULL;
 
 	(void)fprintf(stderr, "initconf(): ircd.conf = %s\n", configfile);
+	(void)fprintf(stderr, "initconf(): ircd dir  = %s\n", DPATH);
 	if ((fd = openconf()) == -1)
 	    {
 #ifdef	M4_PREPROC
@@ -363,8 +377,8 @@ int	opt;
 				(void)fprintf(stderr,
 					"\tWARNING: missing sendq field\n");
 				(void)fprintf(stderr, "\t\t default: %d\n",
-					MAXSENDQLENGTH);
-				(void)sprintf(maxsendq, "%d", MAXSENDQLENGTH);
+					QUEUELEN);
+				(void)sprintf(maxsendq, "%d", QUEUELEN);
 			    }
 			else
 				(void)sprintf(maxsendq, "%d", atoi(tmp));
@@ -651,7 +665,7 @@ dgetsreturnbuf:
 static	int	validate(top)
 aConfItem *top;
 {
-	Reg1	aConfItem *aconf, *bconf;
+	Reg	aConfItem *aconf, *bconf;
 	u_int	otype, valid = 0;
 
 	if (!top)
@@ -704,14 +718,14 @@ aConfItem *top;
 		else
 			(void)fprintf(stderr, "Unmatched %c:%s:%s:%s\n",
 				confchar(aconf->status), aconf->host,
-				aconf->passwd, aconf->name);
+				SHOWSTR(aconf->passwd), aconf->name);
 	return valid ? 0 : -1;
 }
 
 static	char	confchar(status)
 u_int	status;
 {
-	static	char	letrs[] = "QICNoOMKARYSLPH";
+	static	char	letrs[] = "QIiCNoOMKARYSLPH";
 	char	*s = letrs;
 
 	status &= ~(CONF_MATCH|CONF_ILLEGAL);

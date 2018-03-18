@@ -1,14 +1,25 @@
-/*
- * ircd/res.c (C)opyright 1992, 1993, 1994 Darren Reed. All rights reserved.
- * This file may not be distributed without the author's prior permission in
- * any shape or form. The author takes no responsibility for any damage or
- * loss of property which results from the use of this software.  Distribution
- * of this file must include this notice.
+/************************************************************************
+ *   IRC - Internet Relay Chat, ircd/res.c
+ *   Copyright (C) 1992 Darren Reed
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 1, or (at your option)
+ *   any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+
 #include "struct.h"
 #include "common.h"
 #include "sys.h"
-#include "res.h"
 #include "numeric.h"
 #include "h.h"
 
@@ -17,17 +28,13 @@
 #include <sys/socket.h>
 #include "nameser.h"
 #include "resolv.h"
+#include "res.h"
 
 #ifndef lint
-static  char sccsid[] = "@(#)res.c	2.38 4/13/94 (C) 1992 Darren Reed";
+static  char sccsid[] = "@(#)res.c	1.1 1/21/95 (C) 1992 Darren Reed";
 #endif
 
-#undef	DEBUG	/* because there is a lot of debug code in here :-) */
-
-extern	int	dn_expand PROTO((char *, char *, char *, char *, int));
-extern	int	dn_skipname PROTO((char *, char *));
-extern	int	res_mkquery PROTO((int, char *, int, int, char *, int,
-				   struct rrec *, char *, int));
+#define	DEBUG	/* because there is a lot of debug code in here :-) */
 
 extern	int	errno, h_errno;
 extern	int	highest_fd;
@@ -40,23 +47,23 @@ static	CacheTable	hashtable[ARES_CACSIZE];
 static	aCache	*cachetop = NULL;
 static	ResRQ	*last, *first;
 
-static	void	rem_cache PROTO((aCache *));
-static	void	rem_request PROTO((ResRQ *));
-static	int	do_query_name PROTO((Link *, char *, ResRQ *));
-static	int	do_query_number PROTO((Link *, struct in_addr *, ResRQ *));
-static	void	resend_query PROTO((ResRQ *));
-static	int	proc_answer PROTO((ResRQ *, HEADER *, char *, char *));
-static	int	query_name PROTO((char *, int, int, ResRQ *));
-static	aCache	*make_cache PROTO((ResRQ *));
-static	aCache	*find_cache_name PROTO((char *));
-static	aCache	*find_cache_number PROTO((ResRQ *, char *));
-static	int	add_request PROTO((ResRQ *));
-static	ResRQ	*make_request PROTO((Link *));
-static	int	send_res_msg PROTO((char *, int, int));
-static	ResRQ	*find_id PROTO((int));
-static	int	hash_number PROTO((unsigned char *));
-static	void	update_list PROTO((ResRQ *, aCache *));
-static	int	hash_name PROTO((char *));
+static	void	rem_cache __P((aCache *));
+static	void	rem_request __P((ResRQ *));
+static	int	do_query_name __P((Link *, char *, ResRQ *));
+static	int	do_query_number __P((Link *, struct in_addr *, ResRQ *));
+static	void	resend_query __P((ResRQ *));
+static	int	proc_answer __P((ResRQ *, HEADER *, char *, char *));
+static	int	query_name __P((char *, int, int, ResRQ *));
+static	aCache	*make_cache __P((ResRQ *)), *rem_list __P((aCache *));
+static	aCache	*find_cache_name __P((char *));
+static	aCache	*find_cache_number __P((ResRQ *, char *));
+static	int	add_request __P((ResRQ *));
+static	ResRQ	*make_request __P((Link *));
+static	int	send_res_msg __P((char *, int, int));
+static	ResRQ	*find_id __P((int));
+static	int	hash_number __P((unsigned char *));
+static	void	update_list __P((ResRQ *, aCache *));
+static	int	hash_name __P((char *));
 
 static	struct cacheinfo {
 	int	ca_adds;
@@ -84,7 +91,7 @@ static	struct	resinfo {
 int	init_resolver(op)
 int	op;
 {
-	int	ret = 0;
+	int	ret = 0, on = 0;
 
 #ifdef	LRAND48
 	srand48(time(NULL));
@@ -110,8 +117,7 @@ int	op;
 		int	on = 0;
 
 		ret = resfd = socket(AF_INET, SOCK_DGRAM, 0);
-		(void) setsockopt(ret, SOL_SOCKET, SO_BROADCAST,
-				  (char *)&on, sizeof(on));
+		(void) SETSOCKOPT(ret, SOL_SOCKET, SO_BROADCAST, &on, on);
 	    }
 #ifdef DEBUG
 	if (op & RES_INITDEBG);
@@ -151,9 +157,9 @@ ResRQ *new;
 static	void	rem_request(old)
 ResRQ	*old;
 {
-	Reg1	ResRQ	**rptr, *r2ptr = NULL;
-	Reg2	int	i;
-	Reg3	char	*s;
+	Reg	ResRQ	**rptr, *r2ptr = NULL;
+	Reg	int	i;
+	Reg	char	*s;
 
 	if (!old)
 		return;
@@ -188,12 +194,12 @@ ResRQ	*old;
 static	ResRQ	*make_request(lp)
 Link	*lp;
 {
-	Reg1	ResRQ	*nreq;
+	Reg	ResRQ	*nreq;
 
 	nreq = (ResRQ *)MyMalloc(sizeof(ResRQ));
 	bzero((char *)nreq, sizeof(ResRQ));
 	nreq->next = NULL; /* where NULL is non-zero ;) */
-	nreq->sentat = time(NULL);
+	nreq->sentat = timeofday;
 	nreq->retries = 3;
 	nreq->resend = 1;
 	nreq->srch = -1;
@@ -216,8 +222,8 @@ Link	*lp;
 time_t	timeout_query_list(now)
 time_t	now;
 {
-	Reg1	ResRQ	*rptr, *r2ptr;
-	Reg2	time_t	next = 0, tout;
+	Reg	ResRQ	*rptr, *r2ptr;
+	Reg	time_t	next = 0, tout;
 	aClient	*cptr;
 
 	Debug((DEBUG_DNS,"timeout_query_list at %s",myctime(now)));
@@ -225,41 +231,41 @@ time_t	now;
 	    {
 		r2ptr = rptr->next;
 		tout = rptr->sentat + rptr->timeout;
-		if (now >= tout)
-			if (--rptr->retries <= 0)
-			    {
+		if (now >= tout && --rptr->retries <= 0)
+		    {
 #ifdef DEBUG
-				Debug((DEBUG_ERROR,"timeout %x now %d cptr %x",
-					rptr, now, rptr->cinfo.value.cptr));
+			Debug((DEBUG_ERROR,"timeout %x now %d cptr %x",
+				rptr, now, rptr->cinfo.value.cptr));
 #endif
-				reinfo.re_timeouts++;
-				cptr = rptr->cinfo.value.cptr;
-				switch (rptr->cinfo.flags)
-				{
-				case ASYNC_CLIENT :
-					ClearDNS(cptr);
-					if (!DoingAuth(cptr))
-						SetAccess(cptr);
-					break;
-				case ASYNC_CONNECT :
-					sendto_ops("Host %s unknown",
-						   rptr->name);
-					break;
-				}
-				rem_request(rptr);
-				continue;
-			    }
-			else
-			    {
-				rptr->sentat = now;
-				rptr->timeout += rptr->timeout;
-				resend_query(rptr);
+			reinfo.re_timeouts++;
+			cptr = rptr->cinfo.value.cptr;
+			switch (rptr->cinfo.flags)
+			{
+			case ASYNC_CLIENT :
+				ClearDNS(cptr);
+				if (!DoingAuth(cptr))
+					SetAccess(cptr);
+				break;
+			case ASYNC_CONNECT :
+				sendto_flag(SCH_ERROR,
+					    "Host %s unknown", rptr->name);
+				break;
+			}
+			rem_request(rptr);
+			continue;
+		    }
+		else
+		    {
+			rptr->sentat = now;
+			rptr->timeout += rptr->timeout;
+			resend_query(rptr);
+			tout = now + rptr->timeout;
 #ifdef DEBUG
-				Debug((DEBUG_INFO,"r %x now %d retry %d c %x",
-					rptr, now, rptr->retries,
-					rptr->cinfo.value.cptr));
+			Debug((DEBUG_INFO,"r %x now %d retry %d c %x",
+				rptr, now, rptr->retries,
+				rptr->cinfo.value.cptr));
 #endif
-			    }
+		    }
 		if (!next || tout < next)
 			next = tout;
 	    }
@@ -273,7 +279,7 @@ time_t	now;
 void	del_queries(cp)
 char	*cp;
 {
-	Reg1	ResRQ	*rptr, *r2ptr;
+	Reg	ResRQ	*rptr, *r2ptr;
 
 	for (rptr = first; rptr; rptr = r2ptr)
 	    {
@@ -294,7 +300,7 @@ static	int	send_res_msg(msg, len, rcount)
 char	*msg;
 int	len, rcount;
 {
-	Reg1	int	i;
+	Reg	int	i;
 	int	sent = 0, max;
 
 	if (!msg)
@@ -309,7 +315,7 @@ int	len, rcount;
 	for (i = 0; i < max; i++)
 	    {
 		_res.nsaddr_list[i].sin_family = AF_INET;
-		if (sendto(resfd, msg, len, 0, &(_res.nsaddr_list[i]),
+		if (sendto(resfd, msg, len, 0, (SAP)&(_res.nsaddr_list[i]),
 			   sizeof(struct sockaddr)) == len)
 		    {
 			reinfo.re_sent++;
@@ -330,7 +336,7 @@ int	len, rcount;
 static	ResRQ	*find_id(id)
 int	id;
 {
-	Reg1	ResRQ	*rptr;
+	Reg	ResRQ	*rptr;
 
 	for (rptr = first; rptr; rptr = rptr->next)
 		if (rptr->id == id)
@@ -342,7 +348,7 @@ struct	hostent	*gethost_byname(name, lp)
 char	*name;
 Link	*lp;
 {
-	Reg1	aCache	*cp;
+	Reg	aCache	*cp;
 
 	reinfo.re_na_look++;
 	if ((cp = find_cache_name(name)))
@@ -371,7 +377,7 @@ Link	*lp;
 static	int	do_query_name(lp, name, rptr)
 Link	*lp;
 char	*name;
-Reg1	ResRQ	*rptr;
+Reg	ResRQ	*rptr;
 {
 	char	hname[HOSTLEN+1];
 	int	len;
@@ -406,10 +412,10 @@ Reg1	ResRQ	*rptr;
 static	int	do_query_number(lp, numb, rptr)
 Link	*lp;
 struct	in_addr	*numb;
-Reg1	ResRQ	*rptr;
+Reg	ResRQ	*rptr;
 {
 	char	ipbuf[32];
-	Reg2	u_char	*cp;
+	Reg	u_char	*cp;
 
 	cp = (u_char *)&numb->s_addr;
 	(void)sprintf(ipbuf,"%u.%u.%u.%u.in-addr.arpa.",
@@ -443,7 +449,7 @@ ResRQ	*rptr;
 
 	bzero(buf, sizeof(buf));
 	r = res_mkquery(QUERY, name, class, type, NULL, 0, NULL,
-			buf, sizeof(buf));
+			(u_char *)buf, sizeof(buf));
 	if (r <= 0)
 	    {
 		h_errno = NO_RECOVERY;
@@ -505,8 +511,8 @@ ResRQ	*rptr;
 char	*buf, *eob;
 HEADER	*hptr;
 {
-	Reg1	char	*cp, **alias;
-	Reg2	struct	hent	*hp;
+	Reg	char	*cp, **alias;
+	Reg	struct	hent	*hp;
 	int	class, type, dlen, len, ans = 0, n;
 	struct	in_addr	dr, *adr;
 
@@ -518,12 +524,12 @@ HEADER	*hptr;
 	alias = hp->h_aliases;
 	while (*alias)
 		alias++;
-#ifdef	SOL20		/* brain damaged compiler (Solaris2) it seems */
+#ifdef	SVR4		/* brain damaged compiler (Solaris2) it seems */
 	for (; hptr->qdcount > 0; hptr->qdcount--)
 #else
 	while (hptr->qdcount-- > 0)
 #endif
-		if ((n = dn_skipname(cp, eob)) == -1)
+		if ((n = dn_skipname((u_char *)cp, (u_char *)eob)) == -1)
 			break;
 		else
 			cp += (n + QFIXEDSZ);
@@ -531,18 +537,19 @@ HEADER	*hptr;
 	 * proccess each answer sent to us blech.
 	 */
 	while (hptr->ancount-- > 0 && cp && cp < eob) {
-		n = dn_expand(buf, eob, cp, hostbuf, sizeof(hostbuf));
+		n = dn_expand((u_char *)buf, (u_char *)eob, (u_char *)cp,
+			      hostbuf, sizeof(hostbuf));
 		if (n <= 0)
 			break;
 
 		cp += n;
-		type = (int)_getshort(cp);
+		type = (int)_getshort((u_char *)cp);
 		cp += sizeof(short);
-		class = (int)_getshort(cp);
+		class = (int)_getshort((u_char *)cp);
 		cp += sizeof(short);
-		rptr->ttl = _getlong(cp);
+		rptr->ttl = _getlong((u_char *)cp);
 		cp += sizeof(rptr->ttl);
-		dlen =  (int)_getshort(cp);
+		dlen =  (int)_getshort((u_char *)cp);
 		cp += sizeof(short);
 		rptr->type = type;
 
@@ -579,7 +586,8 @@ HEADER	*hptr;
 			cp += dlen;
  			break;
 		case T_PTR :
-			if((n = dn_expand(buf, eob, cp, hostbuf,
+			if((n = dn_expand((u_char *)buf, (u_char *)eob,
+					  (u_char *)cp, hostbuf,
 					  sizeof(hostbuf) )) < 0)
 			    {
 				cp = NULL;
@@ -587,7 +595,8 @@ HEADER	*hptr;
 			    }
 			cp += n;
 			len = strlen(hostbuf);
-			Debug((DEBUG_INFO,"got host %s",hostbuf));
+			Debug((DEBUG_INFO, "got host %s (%d vs %d)",
+				hostbuf, len, strlen(hostbuf)));
 			/*
 			 * copy the returned hostname into the host name
 			 * or alias field if there is a known hostname
@@ -610,7 +619,7 @@ HEADER	*hptr;
 			break;
 		case T_CNAME :
 			cp += dlen;
-			Debug((DEBUG_INFO,"got cname %s", hostbuf));
+			Debug((DEBUG_INFO,"got cname %s",hostbuf));
 			if (alias >= &(hp->h_aliases[MAXALIASES-1]))
 				break;
 			*alias = (char *)MyMalloc(len + 1);
@@ -621,7 +630,7 @@ HEADER	*hptr;
 		default :
 #ifdef DEBUG
 			Debug((DEBUG_INFO,"proc_answer: type:%d for:%s",
-			      type, hostbuf));
+			      type,hostbuf));
 #endif
 			break;
 		}
@@ -636,15 +645,14 @@ struct	hostent	*get_res(lp)
 char	*lp;
 {
 	static	char	buf[sizeof(HEADER) + MAXPACKET];
-	Reg1	HEADER	*hptr;
-	Reg2	ResRQ	*rptr = NULL;
+	Reg	HEADER	*hptr;
+	Reg	ResRQ	*rptr = NULL;
 	aCache	*cp;
 	struct	sockaddr_in	sin;
 	int	rc, a, len = sizeof(sin), max;
 
 	(void)alarm((unsigned)4);
-	rc = recvfrom(resfd, buf, sizeof(buf), 0, (struct sockaddr *)&sin,
-		      &len);
+	rc = recvfrom(resfd, buf, sizeof(buf), 0, (SAP)&sin, &len);
 	(void)alarm((unsigned)0);
 	if (rc <= sizeof(HEADER))
 		goto getres_err;
@@ -805,9 +813,9 @@ getres_err:
 }
 
 static	int	hash_number(ip)
-Reg1 unsigned char *ip;
+Reg	u_char	*ip;
 {
-	Reg1	u_int	hashv = 0;
+	Reg	u_int	hashv = 0;
 
 	/* could use loop but slower */
 	hashv += (int)*ip++;
@@ -821,7 +829,7 @@ Reg1 unsigned char *ip;
 static	int	hash_name(name)
 register	char	*name;
 {
-	Reg1	u_int	hashv = 0;
+	Reg	u_int	hashv = 0;
 
 	for (; *name && *name != '.'; name++)
 		hashv += *name;
@@ -833,10 +841,10 @@ register	char	*name;
 ** Add a new cache item to the queue and hash table.
 */
 static	aCache	*add_to_cache(ocp)
-Reg1	aCache	*ocp;
+Reg	aCache	*ocp;
 {
-	Reg1	aCache	*cp = NULL;
-	Reg2	int	hashv;
+	Reg	aCache	*cp = NULL;
+	Reg	int	hashv;
 
 #ifdef DEBUG
 	Debug((DEBUG_INFO,
@@ -887,9 +895,9 @@ static	void	update_list(rptr, cachep)
 ResRQ	*rptr;
 aCache	*cachep;
 {
-	Reg1	aCache	**cpp, *cp = cachep;
-	Reg2	char	*s, *t, **base;
-	Reg3	int	i, j;
+	Reg	aCache	**cpp, *cp = cachep;
+	Reg	char	*s, *t, **base;
+	Reg	int	i, j;
 	int	addrcount;
 
 	/*
@@ -940,12 +948,8 @@ aCache	*cachep;
 			Debug((DEBUG_DNS,"u_l:add name %s hal %x ac %d",
 				s, cp->he.h_aliases, addrcount));
 #endif
-			base[addrcount-1] = s;
+			base[addrcount-1] = mystrdup(s);
 			base[addrcount] = NULL;
-			if (i)
-				rptr->he.h_aliases[i-1] = NULL;
-			else
-				rptr->he.h_name = NULL;
 		    }
 	    }
 	for (i = 0; cp->he.h_addr_list[i]; i++)
@@ -973,12 +977,14 @@ aCache	*cachep;
 		 */
 		if (!t)
 		    {
-			base = cp->he.h_addr_list;
+			struct	in_addr	**ab;
+
+			ab = (struct in_addr **)cp->he.h_addr_list;
 			addrcount++;
-			t = (char *)MyRealloc(*base,
+			t = (char *)MyRealloc((char *)*ab,
 					addrcount * sizeof(struct in_addr));
-			base = (char **)MyRealloc((char *)base,
-					(addrcount + 1) * sizeof(char *));
+			base = (char **)MyRealloc((char *)ab,
+					(addrcount + 1) * sizeof(*ab));
 			cp->he.h_addr_list = base;
 #ifdef	DEBUG
 			Debug((DEBUG_DNS,"u_l:add IP %x hal %x ac %d",
@@ -988,11 +994,11 @@ aCache	*cachep;
 #endif
 			for (; addrcount; addrcount--)
 			    {
-				*base++ = t;
+				*ab++ = (struct in_addr *)t;
 				t += sizeof(struct in_addr);
 			    }
-			*base = NULL;
-			bcopy(s, *--base, sizeof(struct in_addr));
+			*ab = NULL;
+			bcopy(s, (char *)*--ab, sizeof(struct in_addr));
 		    }
 	    }
 	return;
@@ -1001,9 +1007,9 @@ aCache	*cachep;
 static	aCache	*find_cache_name(name)
 char	*name;
 {
-	Reg1	aCache	*cp;
-	Reg2	char	*s;
-	Reg3	int	hashv, i;
+	Reg	aCache	*cp;
+	Reg	char	*s;
+	Reg	int	hashv, i;
 
 	hashv = hash_name(name);
 
@@ -1048,8 +1054,8 @@ static	aCache	*find_cache_number(rptr, numb)
 ResRQ	*rptr;
 char	*numb;
 {
-	Reg1	aCache	*cp;
-	Reg2	int	hashv,i;
+	Reg	aCache	*cp;
+	Reg	int	hashv,i;
 #ifdef	DEBUG
 	struct	in_addr	*ip = (struct in_addr *)numb;
 #endif
@@ -1074,6 +1080,11 @@ char	*numb;
 
 	for (cp = cachetop; cp; cp = cp->list_next)
 	    {
+		if (!cp->he.h_addr_list && !cp->he.h_aliases)
+		    {
+			cp = rem_list(cp);
+			continue;
+		    }
 		/*
 		 * single address entry...would have been done by hashed
 		 * search above...
@@ -1101,10 +1112,10 @@ char	*numb;
 static	aCache	*make_cache(rptr)
 ResRQ	*rptr;
 {
-	Reg1	aCache	*cp;
-	Reg2	int	i, n;
-	Reg3	struct	hostent	*hp;
-	Reg3	char	*s, **t;
+	Reg	aCache	*cp;
+	Reg	int	i, n;
+	Reg	struct	hostent	*hp;
+	Reg	char	*s, **t;
 
 	/*
 	** shouldn't happen but it just might...
@@ -1115,9 +1126,7 @@ ResRQ	*rptr;
 	** Make cache entry.  First check to see if the cache already exists
 	** and if so, return a pointer to it.
 	*/
-	if ((cp = find_cache_number(rptr, (char *)&rptr->he.h_addr.s_addr)))
-		return cp;
-	for (i = 1; rptr->he.h_addr_list[i].s_addr; i++)
+	for (i = 0; rptr->he.h_addr_list[i].s_addr; i++)
 		if ((cp = find_cache_number(rptr,
 				(char *)&(rptr->he.h_addr_list[i].s_addr))))
 			return cp;
@@ -1128,7 +1137,7 @@ ResRQ	*rptr;
 	cp = (aCache *)MyMalloc(sizeof(aCache));
 	bzero((char *)cp, sizeof(aCache));
 	hp = &cp->he;
-	for (i = 0; i < MAXADDRS; i++)
+	for (i = 0; i < MAXADDRS - 1; i++)
 		if (!rptr->he.h_addr_list[i].s_addr)
 			break;
 
@@ -1144,7 +1153,7 @@ ResRQ	*rptr;
 	for (n = 0; n < i; n++, s += sizeof(struct in_addr))
 	    {
 		*t++ = s;
-		bcopy((char *)&(rptr->he.h_addr_list[n].s_addr), s,
+		bcopy((char *)&rptr->he.h_addr_list[n], s,
 		      sizeof(struct in_addr));
 	    }
 	*t = (char *)NULL;
@@ -1152,7 +1161,7 @@ ResRQ	*rptr;
 	/*
 	** an array of pointers to CNAMEs.
 	*/
-	for (i = 0; i < MAXALIASES; i++)
+	for (i = 0; i < MAXALIASES - 1; i++)
 		if (!rptr->he.h_aliases[i])
 			break;
 	i++;
@@ -1173,13 +1182,35 @@ ResRQ	*rptr;
 	    }
 	else
 		cp->ttl = rptr->ttl;
-	cp->expireat = time(NULL) + cp->ttl;
+	cp->expireat = timeofday + cp->ttl;
 	rptr->he.h_name = NULL;
 #ifdef DEBUG
 	Debug((DEBUG_INFO,"make_cache:made cache %#x", cp));
 #endif
 	return add_to_cache(cp);
 }
+
+/*
+ * rem_list
+ */
+static	aCache	*rem_list(cp)
+aCache	*cp;
+{
+	aCache	**cpp, *cr = cp->list_next;
+
+	/*
+	 * remove cache entry from linked list
+	 */
+	for (cpp = &cachetop; *cpp; cpp = &((*cpp)->list_next))
+		if (*cpp == cp)
+		    {
+			*cpp = cp->list_next;
+			MyFree((char *)cp);
+			break;
+		    }
+	return cr;
+}
+
 
 /*
  * rem_cache
@@ -1189,10 +1220,10 @@ ResRQ	*rptr;
 static	void	rem_cache(ocp)
 aCache	*ocp;
 {
-	Reg1	aCache	**cp;
-	Reg2	struct	hostent *hp = &ocp->he;
-	Reg3	int	hashv;
-	Reg4	aClient	*cptr;
+	Reg	aCache	**cp;
+	Reg	struct	hostent *hp = &ocp->he;
+	Reg	int	hashv;
+	Reg	aClient	*cptr;
 
 #ifdef	DEBUG
 	Debug((DEBUG_DNS, "rem_cache: ocp %#x hp %#x l_n %#x aliases %#x",
@@ -1283,8 +1314,8 @@ aCache	*ocp;
 time_t	expire_cache(now)
 time_t	now;
 {
-	Reg1	aCache	*cp, *cp2;
-	Reg2	time_t	next = 0;
+	Reg	aCache	*cp, *cp2;
+	Reg	time_t	next = 0;
 
 	for (cp = cachetop; cp; cp = cp2)
 	    {
@@ -1306,7 +1337,7 @@ time_t	now;
  */
 void	flush_cache()
 {
-	Reg1	aCache	*cp;
+	Reg	aCache	*cp;
 
 	while ((cp = cachetop))
 		rem_cache(cp);
@@ -1317,14 +1348,14 @@ aClient *cptr, *sptr;
 int	parc;
 char	*parv[];
 {
-	Reg1	aCache	*cp;
-	Reg2	int	i;
+	Reg	aCache	*cp;
+	Reg	int	i;
 
 	if (parv[1] && *parv[1] == 'l') {
 		for(cp = cachetop; cp; cp = cp->list_next)
 		    {
 			sendto_one(sptr, "NOTICE %s :Ex %d ttl %d host %s(%s)",
-				   parv[0], cp->expireat - time(NULL), cp->ttl,
+				   parv[0], cp->expireat - timeofday, cp->ttl,
 				   cp->he.h_name, inetntoa(cp->he.h_addr));
 			for (i = 0; cp->he.h_aliases[i]; i++)
 				sendto_one(sptr,"NOTICE %s : %s = %s (CN)",
@@ -1352,8 +1383,9 @@ char	*parv[];
 	return 0;
 }
 
-u_long	cres_mem(sptr)
+u_long	cres_mem(sptr, nick)
 aClient	*sptr;
+char	*nick;
 {
 	register aCache	*c = cachetop;
 	register struct	hostent	*h;
@@ -1382,8 +1414,8 @@ aClient	*sptr;
 	    }
 	ts = ARES_CACSIZE * sizeof(CacheTable);
 	sendto_one(sptr, ":%s %d %s :RES table %d",
-		   me.name, RPL_STATSDEBUG, sptr->name, ts);
+		   me.name, RPL_STATSDEBUG, nick, ts);
 	sendto_one(sptr, ":%s %d %s :Structs %d IP storage %d Name storage %d",
-		   me.name, RPL_STATSDEBUG, sptr->name, sm, im, nm);
+		   me.name, RPL_STATSDEBUG, nick, sm, im, nm);
 	return ts + sm + im + nm;
 }

@@ -37,7 +37,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)list.c	2.24 4/20/94 (C) 1988 University of Oulu, \
+static  char sccsid[] = "%W% %G% (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -49,8 +49,8 @@ Computing Center and Jarkko Oikarinen";
 #ifdef	DBMALLOC
 #include "malloc.h"
 #endif
-void	free_link PROTO((Link *));
-Link	*make_link PROTO(());
+void	free_link __P((Link *));
+Link	*make_link __P(());
 
 #ifdef	DEBUGMODE
 static	struct	liststats {
@@ -58,6 +58,9 @@ static	struct	liststats {
 } cloc, crem, users, servs, links, classs, aconfs;
 
 #endif
+
+anUser	*usrtop = NULL;
+aServer	*svrtop = NULL;
 
 void	outofmemory();
 
@@ -79,9 +82,27 @@ void	initlists()
 void	outofmemory()
 {
 	Debug((DEBUG_FATAL, "Out of memory: restarting server..."));
+	sendto_flag(SCH_NOTICE, "Ouch!!! Out of memory...");
 	restart("Out of Memory");
 }
 
+#ifdef	DEBUGMODE
+void	checklists()
+{
+	aServer	*sp;
+	anUser	*up;
+
+	for (sp = svrtop; sp; sp = sp->nexts)
+		if (sp->bcptr->serv != sp)
+			Debug((DEBUG_ERROR, "svrtop: %#x->%#x->%#x != %#x",
+				sp, sp->bcptr, sp->bcptr->serv, sp));
+	
+	for (up = usrtop; up; up = up->nextu)
+		if (up->bcptr->user != up)
+			Debug((DEBUG_ERROR, "usrtop: %#x->%#x->%#x != %#x",
+				up, up->bcptr, up->bcptr->user, up));
+}
+#endif
 	
 /*
 ** Create a new aClient structure and set it to initial state.
@@ -96,8 +117,8 @@ void	outofmemory()
 aClient	*make_client(from)
 aClient	*from;
 {
-	Reg1	aClient *cptr = NULL;
-	Reg2	unsigned size = CLIENT_REMOTE_SIZE;
+	Reg	aClient *cptr = NULL;
+	Reg	unsigned size = CLIENT_REMOTE_SIZE;
 
 	/*
 	 * Check freelists first to see if we can grab a client without
@@ -129,11 +150,12 @@ aClient	*from;
 	(void)strcpy(cptr->username, "unknown");
 	if (size == CLIENT_LOCAL_SIZE)
 	    {
-		cptr->since = cptr->lasttime = cptr->firsttime = time(NULL);
+		cptr->since = cptr->lasttime = cptr->firsttime = timeofday;
 		cptr->confs = NULL;
 		cptr->sockhost[0] = '\0';
 		cptr->buffer[0] = '\0';
 		cptr->authfd = -1;
+		cptr->exitc = EXITC_UNDEF;
 	    }
 	return (cptr);
 }
@@ -151,7 +173,7 @@ aClient	*cptr;
 anUser	*make_user(cptr)
 aClient *cptr;
 {
-	Reg1	anUser	*user;
+	Reg	anUser	*user;
 
 	user = cptr->user;
 	if (!user)
@@ -163,9 +185,17 @@ aClient *cptr;
 		user->away = NULL;
 		user->refcnt = 1;
 		user->joined = 0;
+		user->flags = 0;
 		user->channel = NULL;
 		user->invited = NULL;
+		user->uwas = NULL;
 		cptr->user = user;
+		user->nextu = NULL;
+		user->prevu = NULL;
+		user->servp = NULL;
+		user->bcptr = cptr;
+		if (cptr->next)	/* the only cptr->next == NULL is me */
+			istat.is_users++;
 	    }
 	return user;
 }
@@ -173,7 +203,8 @@ aClient *cptr;
 aServer	*make_server(cptr)
 aClient	*cptr;
 {
-	Reg1	aServer	*serv = cptr->serv;
+	Reg	aServer	*serv = cptr->serv, *sp, *spp = NULL;
+	Reg	int	tok;
 
 	if (!serv)
 	    {
@@ -182,10 +213,40 @@ aClient	*cptr;
 		servs.inuse++;
 #endif
 		serv->user = NULL;
-		serv->nexts = NULL;
+		serv->userlist = NULL;
+#ifdef KRYS
+		serv->snum = -1;
+#endif
 		*serv->by = '\0';
-		*serv->up = '\0';
+		*serv->tok = '\0';
+		serv->stok = 0;
+		serv->up = NULL;
+		serv->refcnt = 1;
+		serv->nexts = NULL;
 		cptr->serv = serv;
+
+		for (sp = svrtop; sp; spp = sp, sp = sp->nexts)
+			if (spp && ((spp->ltok) + 1 < sp->ltok))
+				break;
+		serv->prevs = spp;
+		if (spp)
+		    {
+			serv->ltok = spp->ltok + 1;
+			spp->nexts = serv;
+		    }
+		else
+		    {	/* Me, myself and I alone */
+			svrtop = serv;
+			serv->ltok = 1;
+		    }
+
+		if (sp)
+		    {
+			serv->nexts = sp;
+			sp->prevs = serv;
+		    }
+		serv->bcptr = cptr;
+		SPRINTF(serv->tok, "%d", serv->ltok);
 	    }
 	return cptr->serv;
 }
@@ -196,31 +257,49 @@ aClient	*cptr;
 **	if count reaches 0
 */
 void	free_user(user, cptr)
-Reg1	anUser	*user;
+Reg	anUser	*user;
 aClient	*cptr;
 {
+	aServer *serv;
+
 	if (--user->refcnt <= 0)
 	    {
+		if (serv = user->servp)
+		    {
+			user->servp = NULL; /* to avoid some impossible loop */
+			free_server(serv, cptr);
+		    }
 		if (user->away)
+		    {
+			istat.is_away--;
+			istat.is_awaymem -= (strlen(user->away) + 1);
 			MyFree((char *)user->away);
+		    }
 		/*
 		 * sanity check
 		 */
 		if (user->joined || user->refcnt < 0 ||
-		    user->invited || user->channel)
+		    user->invited || user->channel || user->uwas ||
+		    user->bcptr || user->prevu || user->nextu)
+		    {
+			char buf[512];
+			/*too many arguments for dumpcore() and sendto_flag()*/
+			SPRINTF(buf, "%#x %#x %#x %#x %d %d %#x %#x %#x (%s)",
+				user, user->invited, user->channel, user->uwas,
+				user->joined, user->refcnt,
+				user->prevu, user->nextu, user->bcptr,
+				(user->bcptr) ? user->bcptr->name :"none");
 #ifdef DEBUGMODE
-			dumpcore("%#x user (%s!%s@%s) %#x %#x %#x %d %d",
-				cptr, cptr ? cptr->name : "<noname>",
-				user->username, user->host, user,
-				user->invited, user->channel, user->joined,
-				user->refcnt);
+			dumpcore("%#x user (%s!%s@%s) %s",
+				 cptr, cptr ? cptr->name : "<noname>",
+				 user->username, user->host, buf);
 #else
-			sendto_ops("* %#x user (%s!%s@%s) %#x %#x %#x %d %d *",
-				cptr, cptr ? cptr->name : "<noname>",
-				user->username, user->host, user,
-				user->invited, user->channel, user->joined,
-				user->refcnt);
+			sendto_flag(SCH_ERROR,
+				    "* %#x user (%s!%s@%s) %s *",
+				    cptr, cptr ? cptr->name : "<noname>",
+				    user->username, user->host, buf);
 #endif
+		    }
 		MyFree((char *)user);
 #ifdef	DEBUGMODE
 		users.inuse--;
@@ -228,14 +307,69 @@ aClient	*cptr;
 	    }
 }
 
+void	free_server(serv, cptr)
+aServer	*serv;
+aClient	*cptr;
+{
+	anUser *user;
+
+	if (user = serv->user)
+	    {
+		if (user->refcnt == 1)
+		    {
+			/*
+			** This really doesn't belong to here, but...
+			** user has been stored in whowas[] sometime in the
+			** past, but it hasn't been counted as gone when all
+			** references were removed - krys
+			*/
+			istat.is_wwusers--;
+			if (user->away)
+			    {
+				istat.is_wwaways--;
+				istat.is_wwawaysmem -= strlen(user->away) + 1;
+			    }
+		    }
+		serv->user = NULL;	/* to avoid some impossible loop */
+		free_user(user, cptr);
+	    }
+	if (--serv->refcnt <= 0)
+	    {
+		if (serv->refcnt < 0 ||	serv->prevs || serv->nexts ||
+		    serv->bcptr || serv->userlist)
+		    {
+			char buf[512];
+			SPRINTF(buf, "%d %#x %#x %#x %#x (%s)",
+				serv->refcnt, serv->prevs, serv->nexts,
+				serv->userlist, serv->bcptr,
+				(serv->bcptr) ? serv->bcptr->name : "none");
+#ifdef DEBUGMODE
+			dumpcore("%#x server %s %s",
+				 cptr, cptr ? cptr->name : "<noname>", buf);
+			servs.inuse--;
+#else
+			sendto_flag(SCH_ERROR, "* %#x server %s %s *",
+				    cptr, cptr ? cptr->name : "<noname>", buf);
+#endif
+		    }
+		MyFree((char *)serv);
+	    }
+}
+
 /*
  * taken the code from ExitOneClient() for this and placed it here.
  * - avalon
+ * remove client **AND** _related structures_ from lists,
+ * *free* them too. -krys
  */
 void	remove_client_from_list(cptr)
-Reg1	aClient	*cptr;
+Reg	aClient	*cptr;
 {
 	checklist();
+	if (cptr->hopcount == 0) /* is there another way, at this point? */
+		istat.is_localc--;
+	else
+		istat.is_remc--;
 	if (cptr->prev)
 		cptr->prev->next = cptr->next;
 	else
@@ -245,28 +379,70 @@ Reg1	aClient	*cptr;
 	    }
 	if (cptr->next)
 		cptr->next->prev = cptr->prev;
-	if (IsPerson(cptr) && cptr->user)
-	    {
-		add_history(cptr);
-		off_history(cptr);
-	    }
+
 	if (cptr->user)
+	    {
+		istat.is_users--;
+		/*
+		** has to be removed from the list of aUser structures,
+		** be careful of user->servp->userlist
+		*/
+		if (cptr->user->servp
+		    && cptr->user->servp->userlist == cptr->user)
+			if (cptr->user->nextu
+			    && cptr->user->nextu->servp == cptr->user->servp)
+				cptr->user->servp->userlist =cptr->user->nextu;
+			else
+				cptr->user->servp->userlist = NULL;
+		if (cptr->user->nextu)
+			cptr->user->nextu->prevu = cptr->user->prevu;
+		if (cptr->user->prevu)
+			cptr->user->prevu->nextu = cptr->user->nextu;
+		if (usrtop == cptr->user)
+		    {
+			usrtop = cptr->user->nextu;
+			usrtop->prevu = NULL;
+		    }
+		cptr->user->prevu = NULL;
+		cptr->user->nextu = NULL;
+		
+		/* decrement reference counter, and eventually free it */
+		cptr->user->bcptr = NULL;
 		(void)free_user(cptr->user, cptr);
+	    }
+
 	if (cptr->serv)
 	    {
-		if (cptr->serv->user)
-			free_user(cptr->serv->user, cptr);
-		MyFree((char *)cptr->serv);
-#ifdef	DEBUGMODE
-		servs.inuse--;
-#endif
+		/* has to be removed from the list of aServer structures */
+		if (cptr->serv->nexts)
+			cptr->serv->nexts->prevs = cptr->serv->prevs;
+		if (cptr->serv->prevs)
+			cptr->serv->prevs->nexts = cptr->serv->nexts;
+		if (svrtop == cptr->serv)
+			svrtop = cptr->serv->nexts;
+		cptr->serv->prevs = NULL;
+		cptr->serv->nexts = NULL;
+		
+		/* decrement reference counter, and eventually free it */
+		cptr->serv->bcptr = NULL;
+		free_server(cptr->serv, cptr);
 	    }
+
+	if (cptr->service)
+		/*
+		** has to be removed from the list of aService structures,
+		** no reference counter for services, thus this part of the
+		** code can safely be included in free_service()
+		*/
+		free_service(cptr);
+
 #ifdef	DEBUGMODE
 	if (cptr->fd == -2)
 		cloc.inuse--;
 	else
 		crem.inuse--;
 #endif
+
 	(void)free_client(cptr);
 	numclients--;
 	return;
@@ -285,10 +461,17 @@ aClient	*cptr;
 	 * since we always insert new clients to the top of the list,
 	 * this should mean the "me" is the bottom most item in the list.
 	 */
+	if (cptr->from == cptr)
+		istat.is_localc++;
+	else
+		istat.is_remc++;
+	if (cptr->user)
+		istat.is_users++;
 	cptr->next = client;
 	client = cptr;
 	if (cptr->next)
 		cptr->next->prev = cptr;
+	numclients++;
 	return;
 }
 
@@ -296,31 +479,30 @@ aClient	*cptr;
  * Look for ptr in the linked listed pointed to by link.
  */
 Link	*find_user_link(lp, ptr)
-Reg1	Link	*lp;
-Reg2	aClient *ptr;
+Reg	Link	*lp;
+Reg	aClient *ptr;
 {
-	while (lp && ptr)
-	   {
-		if (lp->value.cptr == ptr)
-			return (lp);
-		lp = lp->next;
-	    }
+	if (ptr)
+		for (; lp; lp = lp->next)
+			if (lp->value.cptr == ptr)
+				return (lp);
 	return NULL;
 }
 
 Link	*make_link()
 {
-	Reg1	Link	*lp;
+	Reg	Link	*lp;
 
 	lp = (Link *)MyMalloc(sizeof(Link));
 #ifdef	DEBUGMODE
 	links.inuse++;
 #endif
+	lp->flags = 0;
 	return lp;
 }
 
 void	free_link(lp)
-Reg1	Link	*lp;
+Reg	Link	*lp;
 {
 	MyFree((char *)lp);
 #ifdef	DEBUGMODE
@@ -331,7 +513,7 @@ Reg1	Link	*lp;
 
 aClass	*make_class()
 {
-	Reg1	aClass	*tmp;
+	Reg	aClass	*tmp;
 
 	tmp = (aClass *)MyMalloc(sizeof(aClass));
 #ifdef	DEBUGMODE
@@ -341,7 +523,7 @@ aClass	*make_class()
 }
 
 void	free_class(tmp)
-Reg1	aClass	*tmp;
+Reg	aClass	*tmp;
 {
 	MyFree((char *)tmp);
 #ifdef	DEBUGMODE
@@ -351,20 +533,25 @@ Reg1	aClass	*tmp;
 
 aConfItem	*make_conf()
 {
-	Reg1	aConfItem *aconf;
+	Reg	aConfItem *aconf;
 
 	aconf = (struct ConfItem *)MyMalloc(sizeof(aConfItem));
+
 #ifdef	DEBUGMODE
 	aconfs.inuse++;
 #endif
+	istat.is_conf++;
+	istat.is_confmem += sizeof(aConfItem);
+
 	bzero((char *)&aconf->ipnum, sizeof(struct in_addr));
+	aconf->clients = aconf->port = 0;
 	aconf->next = NULL;
 	aconf->host = aconf->passwd = aconf->name = NULL;
+	aconf->ping = NULL;
 	aconf->status = CONF_ILLEGAL;
-	aconf->clients = 0;
-	aconf->port = 0;
-	aconf->hold = 0;
-	Class(aconf) = 0;
+	aconf->pref = -1;
+	aconf->hold = time(NULL);
+	Class(aconf) = NULL;
 	return (aconf);
 }
 
@@ -388,9 +575,19 @@ void	free_conf(aconf)
 aConfItem *aconf;
 {
 	del_queries((char *)aconf);
+
+	istat.is_conf--;
+	istat.is_confmem -= aconf->host ? strlen(aconf->host)+1 : 0;
+	istat.is_confmem -= aconf->passwd ? strlen(aconf->passwd)+1 : 0;
+	istat.is_confmem -= aconf->name ? strlen(aconf->name)+1 : 0;
+	istat.is_confmem -= aconf->ping ? sizeof(*aconf->ping) : 0;
+	istat.is_confmem -= sizeof(aConfItem);
+
 	MyFree(aconf->host);
 	if (aconf->passwd)
 		bzero(aconf->passwd, strlen(aconf->passwd));
+	if (aconf->ping)
+		MyFree(aconf->ping);
 	MyFree(aconf->passwd);
 	MyFree(aconf->name);
 	MyFree((char *)aconf);
@@ -443,5 +640,141 @@ char	*name;
 	inuse += aconfs.inuse,
 	sendto_one(cptr, ":%s %d %s :Totals: inuse %d %d",
 		   me.name, RPL_STATSDEBUG, name, inuse, mem);
+}
+#endif
+
+
+add_fd(fd, ary)
+int	fd;
+FdAry	*ary;
+{
+	Debug((DEBUG_DEBUG,"add_fd(%d,%#x)", fd, ary));
+	if (fd >= 0)
+		ary->fd[++(ary->highest)] = fd;
+}
+
+
+int	del_fd(fd, ary)
+int	fd;
+FdAry	*ary;
+{
+	int	i;
+
+	Debug((DEBUG_DEBUG,"del_fd(%d,%#x)", fd, ary));
+	if ((ary->highest == -1) || (fd < 0))
+		return -1;
+	for (i = 0; i <= ary->highest; i++)
+		if (ary->fd[i] == fd)
+			break;
+	if (i < ary->highest)
+	    {
+		ary->fd[i] = ary->fd[ary->highest--];
+		return 0;
+	    }
+	else if (i > ary->highest)
+		return -1;
+	ary->highest--;
+	return 0;
+}
+
+
+#ifdef	HUB
+add_active(fd, ary)
+int	fd;
+FdAry	*ary;
+{
+	del_fd(fd, ary);
+
+	if (ary->highest == MAXCONNECTIONS/(HUB+1))
+	    {
+		bcopy((char *)ary->fd, (char *)&ary->fd[1],
+			sizeof(int) * (MAXCONNECTIONS/(HUB + 1) - 1));
+		*ary->fd = fd;
+	    }
+	else
+		ary->fd[++(ary->highest)] = fd;
+}
+
+
+void	decay_activity()
+{
+	aClient	*cptr;
+	int	i;
+
+	for (i = highest_fd; i >= 0; i--)
+		if ((cptr = local[i]) && IsPerson(cptr))
+		    {
+			if (cptr->ract)
+				cptr->ract--;
+			if (cptr->sact)
+				cptr->sact--;
+		    }
+}
+
+
+static	time_t	sorttime;
+
+int	sort_active(a1, a2)
+const void	*a1, *a2;
+{
+	aClient	*acptr = local[*(int *)a1], *bcptr = local[*(int *)a2];
+
+	/*
+	** give preference between a flooded client and a non-flooded client
+	** to the non-flooded client.
+	*/
+	if (acptr->since > sorttime)
+		if (bcptr->since > sorttime)
+			return 0;
+		else
+			return -1;
+	else if (bcptr->since > sorttime)
+		return 1;
+
+	/*
+	** if one client has a partial message in its receive buffer, give
+	** it preference over the other.
+	*/
+	if (DBufLength(&acptr->recvQ) && !DBufLength(&bcptr->recvQ))
+		return 1;
+	else if (DBufLength(&bcptr->recvQ) && !DBufLength(&acptr->recvQ))
+		return -1;
+
+	return local[*(int *)a1]->priority - local[*(int *)a2]->priority;
+}
+
+
+build_active()
+{
+	aClient	*cptr;
+	FdAry	*ap = &fdaa;
+	int	i;
+
+	sorttime = timeofday;
+	/*
+	** first calculate priority...
+	*/
+	for (i = highest_fd; i >= 0; i--)
+	    {
+		if (!(cptr = local[i]))
+			continue;
+		if (!IsPerson(cptr))
+			cptr->priority = 0;
+		else
+			cptr->priority = cptr->ract + cptr->sact;
+	    }
+
+	/*
+	** then generate active array
+	*/
+	ap->highest = -1;
+	for (i = highest_fd; i >= 0; i--)
+		if (local[i])
+			add_fd(i, ap);
+
+	qsort(ap->fd, ap->highest+1, sizeof(*ap->fd), sort_active);
+
+	if (ap->highest >= MAXCONNECTIONS/(HUB+1))
+		ap->highest = MAXCONNECTIONS/(HUB+1)-1;
 }
 #endif
