@@ -48,7 +48,7 @@
  */
 
 #ifndef lint
-static  char sccsid[] = "@(#)s_conf.c	2.40 4/30/93 (C) 1988 University of Oulu, \
+static  char sccsid[] = "@(#)s_conf.c	2.43 6/11/93 (C) 1988 University of Oulu, \
 Computing Center and Jarkko Oikarinen";
 #endif
 
@@ -58,19 +58,15 @@ Computing Center and Jarkko Oikarinen";
 #include "numeric.h"
 #include <sys/socket.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 #ifdef __hpux
 #include "inet.h"
 #endif
-#ifdef PCS
+#if defined(PCS) || defined(AIX) || defined(DYNIXPTX)
 #include <time.h>
 #endif
 #ifdef	R_LINES
 #include <signal.h>
-#endif
-
-#ifdef DYNIXPTX
-#include <sys/types.h>
-#include <time.h>
 #endif
 
 #include "h.h"
@@ -502,7 +498,8 @@ int	statmask;
  * as a result of an operator issuing this command, else assume it has been
  * called as a result of the server receiving a HUP signal.
  */
-int	rehash(sig)
+int	rehash(cptr, sptr, sig)
+aClient	*cptr, *sptr;
 int	sig;
 {
 	Reg1	aConfItem *tmp = conf, *tmp2;
@@ -536,7 +533,9 @@ int	sig;
 			    {
 				sendto_ops("Restricting %s, closing lp",
 					   get_client_name(acptr,FALSE));
-				ret = exit_client(cptr,acptr,sptr,"R-lined");
+				if (exit_client(cptr,acptr,sptr,"R-lined") ==
+				    FLUSH_BUFFER)
+					ret = FLUSH_BUFFER;
 			    }
 #endif
 		    }
@@ -659,10 +658,10 @@ int	opt;
                     }
 		aconf = make_conf();
 
-		if (tmp = (char *)index(line, '\n'))
+		if ((tmp = (char *)index(line, '\n')))
 			*tmp = 0;
 		else while(dgets(fd, c, sizeof(c) - 1) > 0)
-			if (tmp = (char *)index(c, '\n'))
+			if ((tmp = (char *)index(c, '\n')))
 			    {
 				*tmp = 0;
 				break;
@@ -886,7 +885,7 @@ Reg1	aConfItem	*aconf;
 
 	if (BadPtr(aconf->host) || BadPtr(aconf->name))
 		goto badlookup;
-	if (s = index(aconf->host, '@'))
+	if ((s = index(aconf->host, '@')))
 		s++;
 	else
 		s = aconf->host;
@@ -906,7 +905,7 @@ Reg1	aConfItem	*aconf;
 
 	if (isdigit(*s))
 		aconf->ipnum.s_addr = inet_addr(s);
-	else if (hp = gethost_byname(s, &ln))
+	else if ((hp = gethost_byname(s, &ln)))
 		bcopy(hp->h_addr, (char *)&(aconf->ipnum),
 			sizeof(struct in_addr));
 
@@ -1032,7 +1031,7 @@ aClient	*cptr;
 		(void)dgets(-1, NULL, 0); /* make sure buffer marked empty */
 		while (dgets(pi[0], temprpl, sizeof(temprpl)-1) > 0)
 		    {
-			if (s = (char *)index(temprpl, '\n'))
+			if ((s = (char *)index(temprpl, '\n')))
 			      *s = '\0';
 			if (strlen(temprpl) + strlen(reply) < sizeof(reply)-2)
 				(void)sprintf(rplhold, "%s %s", rplhold,
@@ -1060,7 +1059,7 @@ aClient	*cptr;
 		(void)strcpy(reply,rplhold);
 		rplhold = reply;
 
-		if (rc = (rplchar == 'n' || rplchar == 'N'))
+		if ((rc = (rplchar == 'n' || rplchar == 'N')))
 			break;
 	    }
 	if (rc)

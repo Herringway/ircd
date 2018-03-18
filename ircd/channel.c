@@ -32,7 +32,7 @@
  */
 
 #ifndef	lint
-static	char sccsid[] = "@(#)channel.c	2.37 5/6/93 (C) 1990 University of Oulu, Computing\
+static	char sccsid[] = "@(#)channel.c	2.43 6/21/93 (C) 1990 University of Oulu, Computing\
  Center and Jarkko Oikarinen";
 #endif
 
@@ -45,21 +45,21 @@ static	char sccsid[] = "@(#)channel.c	2.37 5/6/93 (C) 1990 University of Oulu, C
 
 aChannel *channel = NullChn;
 
-static	void	sub1_from_channel PROTO((aChannel *));
 static	void	add_invite PROTO((aClient *, aChannel *));
-static	int	add_banid PROTO((aChannel *, char *));
-static	int	del_banid PROTO((aChannel *, char *));
+static	int	add_banid PROTO((aClient *, aChannel *, char *));
+static	int	can_join PROTO((aClient *, aChannel *, char *));
+static	void	channel_modes PROTO((aClient *, char *, char *, aChannel *));
 static	int	check_channelmask PROTO((aClient *, aClient *, char *));
+static	int	del_banid PROTO((aChannel *, char *));
+static	Link	*is_banned PROTO((aClient *, aChannel *));
 static	int	set_mode PROTO((aClient *, aClient *, aChannel *, int,\
 			        char **, char *,char *));
-static	Link	*is_banned PROTO((aClient *, aChannel *));
-static	int	can_join PROTO((aClient *, aChannel *, char *));
+static	void	sub1_from_channel PROTO((aChannel *));
 
 void	clean_channelname PROTO((char *));
 void	del_invite PROTO((aClient *, aChannel *));
 
 static	char	*PartFmt = ":%s PART %s";
-static	char	namebuf[NICKLEN+USERLEN+HOSTLEN+3];
 /*
  * some buffers for rebuilding channel/nick lists with ,'s
  */
@@ -139,17 +139,21 @@ Reg1	char *s;
 static	char *make_nick_user_host(nick, name, host)
 Reg1	char	*nick, *name, *host;
 {
+	static	char	namebuf[NICKLEN+USERLEN+HOSTLEN+6];
 	Reg2	char	*s = namebuf;
 
 	bzero(namebuf, sizeof(namebuf));
 	nick = check_string(nick);
-	s += strlen(strncpy(namebuf, nick, NICKLEN));
+	strncpyzt(namebuf, nick, NICKLEN);
+	s += strlen(s);
 	*s++ = '!';
 	name = check_string(name);
-	s += strlen(strncpy(s, name, USERLEN));
+	strncpyzt(s, name, USERLEN);
+	s += strlen(s);
 	*s++ = '@';
 	host = check_string(host);
-	s += strlen(strncpy(s, host, HOSTLEN));
+	strncpyzt(s, host, HOSTLEN);
+	s += strlen(s);
 	*s = '\0';
 	return (namebuf);
 }
@@ -159,17 +163,29 @@ Reg1	char	*nick, *name, *host;
  */
 /* add_banid - add an id to be banned to the channel  (belongs to cptr) */
 
-static	int	add_banid(chptr, banid)
+static	int	add_banid(cptr, chptr, banid)
+aClient	*cptr;
 aChannel *chptr;
 char	*banid;
 {
 	Reg1	Link	*ban;
+	Reg2	int	cnt = 0, len = 0;
 
 	for (ban = chptr->banlist; ban; ban = ban->next)
-		if (mycmp(banid, ban->value.cp) == 0)
+	    {
+		len += strlen(ban->value.cp);
+		if (MyClient(cptr) &&
+		    ((len > MAXBANLENGTH) || (++cnt >= MAXBANS) ||
+		     !matches(ban->value.cp, banid) ||
+		     !matches(banid, ban->value.cp)))
 			return -1;
+		else if (!mycmp(ban->value.cp, banid))
+			return -1;
+		
+	    }
 	ban = make_link();
 	bzero((char *)ban, sizeof(Link));
+	ban->flags = CHFL_BAN;
 	ban->next = chptr->banlist;
 	ban->value.cp = (char *)MyMalloc(strlen(banid)+1);
 	(void)strcpy(ban->value.cp, banid);
@@ -210,15 +226,16 @@ aClient *cptr;
 aChannel *chptr;
 {
 	Reg1	Link	*tmp;
+	char	*s;
 
 	if (!IsPerson(cptr))
 		return NULL;
 
-	(void)make_nick_user_host(cptr->name, cptr->user->username,
+	s = make_nick_user_host(cptr->name, cptr->user->username,
 				  cptr->user->host);
 
 	for (tmp = chptr->banlist; tmp; tmp = tmp->next)
-		if (matches(tmp->value.cp, namebuf) == 0)
+		if (matches(tmp->value.cp, s) == 0)
 			break;
 	return (tmp);
 }
@@ -257,18 +274,16 @@ aChannel *chptr;
 	Reg1	Link	**curr;
 	Reg2	Link	*tmp;
 
-	for (curr = &(chptr->members); *curr; curr = &((*curr)->next))
-		if ((*curr)->value.cptr == sptr)
+	for (curr = &chptr->members; (tmp = *curr); curr = &tmp->next)
+		if (tmp->value.cptr == sptr)
 		    {
-			tmp = *curr;
 			*curr = tmp->next;
 			free_link(tmp);
 			break;
 		    }
-	for (curr = &(sptr->user->channel); *curr; curr = &((*curr)->next))
-		if ((*curr)->value.chptr == chptr)
+	for (curr = &sptr->user->channel; (tmp = *curr); curr = &tmp->next)
+		if (tmp->value.chptr == chptr)
 		    {
-			tmp = *curr;
 			*curr = tmp->next;
 			free_link(tmp);
 			break;
@@ -282,7 +297,7 @@ aChannel *chptr;
 {
 	Reg1	Link *tmp;
 
-	if (tmp = find_user_link(chptr->members, lp->value.cptr))
+	if ((tmp = find_user_link(chptr->members, lp->value.cptr)))
 		if (lp->flags & MODE_ADD)
 			tmp->flags |= lp->flags & MODE_FLAGS;
 		else
@@ -296,7 +311,7 @@ aChannel *chptr;
 	Reg1	Link	*lp;
 
 	if (chptr)
-		if (lp = find_user_link(chptr->members, cptr))
+		if ((lp = find_user_link(chptr->members, cptr)))
 			return (lp->flags & CHFL_CHANOP);
 
 	return 0;
@@ -309,7 +324,7 @@ aChannel *chptr;
 	Reg1	Link	*lp;
 
 	if (chptr)
-		if (lp = find_user_link(chptr->members, cptr))
+		if ((lp = find_user_link(chptr->members, cptr)))
 			return (lp->flags & CHFL_VOICE);
 
 	return 0;
@@ -346,7 +361,8 @@ Reg2	aChannel *chptr;
  * write the "simple" list of channel modes for channel chptr onto buffer mbuf
  * with the parameters in pbuf.
  */
-static	void	channel_modes(mbuf, pbuf, chptr)
+static	void	channel_modes(cptr, mbuf, pbuf, chptr)
+aClient	*cptr;
 Reg1	char	*mbuf, *pbuf;
 aChannel *chptr;
 {
@@ -363,17 +379,67 @@ aChannel *chptr;
 		*mbuf++ = 'i';
 	if (chptr->mode.mode & MODE_NOPRIVMSGS)
 		*mbuf++ = 'n';
-	if (*chptr->mode.key)
-		*mbuf++ = 'k';
 	if (chptr->mode.limit)
 	    {
-		*mbuf++ = 'l'; 
-		(void)sprintf(pbuf, "%d", chptr->mode.limit);
+		*mbuf++ = 'l';
+		if (IsMember(cptr, chptr) || IsServer(cptr))
+			(void)sprintf(pbuf, "%d ", chptr->mode.limit);
+	    }
+	if (*chptr->mode.key)
+	    {
+		*mbuf++ = 'k';
+		if (IsMember(cptr, chptr) || IsServer(cptr))
+			(void)strcat(pbuf, chptr->mode.key);
 	    }
 	*mbuf++ = '\0';
 	return;
 }
+static	void	send_mode_list(cptr, chname, top, mask, flag)
+aClient	*cptr;
+Link	*top;
+int	mask;
+char	flag, *chname;
+{
+	Reg1	Link	*lp;
+	Reg2	char	*cp, *name;
+	int	count = 0, send = 0;
 
+	cp = modebuf + strlen(modebuf);
+	if (*parabuf)	/* mode +l or +k xx */
+		count = 1;
+	for (lp = top; lp; lp = lp->next)
+	    {
+		if (!(lp->flags & mask))
+			continue;
+		if (mask == CHFL_BAN)
+			name = lp->value.cp;
+		else
+			name = lp->value.cptr->name;
+		if (strlen(parabuf) + strlen(name) + 10 < (size_t) MODEBUFLEN)
+		    {
+			(void)strcat(parabuf, " ");
+			(void)strcat(parabuf, name);
+			count++;
+			*cp++ = flag;
+			*cp = '\0';
+		    }
+		else if (*parabuf)
+			send = 1;
+		if (count == 3)
+			send = 1;
+		if (send)
+		    {
+			sendto_one(cptr, ":%s MODE %s %s %s",
+				   me.name, chname, modebuf, parabuf);
+			send = 0;
+			count = 0;
+			*parabuf = '\0';
+			cp = modebuf;
+			*cp++ = '+';
+			*cp = '\0';
+		    }
+	    }
+}
 /*
  * send "cptr" a full list of the modes for channel chptr.
  */
@@ -381,89 +447,24 @@ void	send_channel_modes(cptr, chptr)
 aClient *cptr;
 aChannel *chptr;
 {
-	Reg1	Link	*lp, *lp2;
-	Reg2	aClient *acptr;
-	Reg3	char	*cp;
-	int	count = 0, send = 0;
 
 	*modebuf = *parabuf = '\0';
-	channel_modes(modebuf, parabuf, chptr);
-	cp = modebuf + strlen(modebuf);
-	if (*parabuf)	/* mode +l xx */
-		count = 1;
-	if (chptr->mode.mode & MODE_KEY)
-	    {
-		(void)strcat(parabuf, " ");
-		(void)strcat(parabuf, chptr->mode.key);
-		count++;
-	    }
-	for (lp = chptr->members ; lp; )
-	    {
-		acptr = lp->value.cptr;
-		lp2 = find_user_link(chptr->members, acptr);
-		if (lp2 && !(lp2->flags & (CHFL_VOICE|CHFL_CHANOP)))
-		    {
-			lp = lp->next;
-			continue;
-		    }
-		if (strlen(parabuf) + strlen(acptr->name) + 10
-                    < (size_t) MODEBUFLEN)
-		    {
-			(void)strcat(parabuf, " ");
-			(void)strcat(parabuf, acptr->name);
-			count++;
-			if (lp2->flags == CHFL_VOICE)
-				*cp++ = 'v';
-			else
-				*cp++ = 'o';
-			*cp = '\0';
-			lp = lp->next;
-		    }
-		else if (*parabuf)
-			send = 1;
-		if (count == 3)
-			send = 1;
-		if (send)
-		    {
-			sendto_one(cptr, ":%s MODE %s %s %s",
-				   me.name, chptr->chname, modebuf, parabuf);
-			send = 0;
-			count = 0;
-			*parabuf = '\0';
-			cp = modebuf;
-			*cp++ = '+';
-			*cp = '\0';
-		    }
-	    }
-	for (lp = chptr->banlist ; lp; )
-	    {
-		if (strlen(parabuf) + strlen(lp->value.cp) + 10
-                    < (size_t) MODEBUFLEN)
-		    {
-			(void)strcat(parabuf, " ");
-			(void)strcat(parabuf, lp->value.cp);
-			count++;
-			*cp++ = 'b';
-			*cp = '\0';
-			lp = lp->next;
-		    }
-		else if (*parabuf)
-			send = 1;
-		if (count == 3)
-			send = 1;
-		if (send)
-		    {
-			sendto_one(cptr, ":%s MODE %s %s %s",
-				   me.name, chptr->chname, modebuf, parabuf);
-			send = 0;
-			count = 0;
-			*parabuf = '\0';
-			cp = modebuf;
-			*cp++ = '+';
-			*cp = '\0';
-		    }
-	    }
+	channel_modes(cptr, modebuf, parabuf, chptr);
+
+	send_mode_list(cptr, chptr->chname, chptr->members, CHFL_CHANOP, 'o');
 	if (modebuf[1] || *parabuf)
+		sendto_one(cptr, ":%s MODE %s %s %s",
+			   me.name, chptr->chname, modebuf, parabuf);
+
+	*modebuf = *parabuf = '\0';
+	send_mode_list(cptr, chptr->chname, chptr->banlist, CHFL_BAN, 'b');
+	if (*modebuf || *parabuf)
+		sendto_one(cptr, ":%s MODE %s %s %s",
+			   me.name, chptr->chname, modebuf, parabuf);
+
+	*modebuf = *parabuf = '\0';
+	send_mode_list(cptr, chptr->chname, chptr->members, CHFL_VOICE, 'v');
+	if (*modebuf || *parabuf)
 		sendto_one(cptr, ":%s MODE %s %s %s",
 			   me.name, chptr->chname, modebuf, parabuf);
 }
@@ -509,7 +510,7 @@ char	*parv[];
 	    {
 		*modebuf = *parabuf = '\0';
 		modebuf[1] = '\0';
-		channel_modes(modebuf, parabuf, chptr);
+		channel_modes(sptr, modebuf, parabuf, chptr);
 		sendto_one(sptr, rpl_str(RPL_CHANNELMODEIS), me.name, parv[0],
 			   chptr->chname, modebuf, parabuf);
 		return 0;
@@ -565,8 +566,10 @@ char	*parv[], *mbuf, *pbuf;
 	Reg1	Link	*lp;
 	Reg2	char	*curr = parv[0], *cp;
 	Reg3	int	*ip;
-	int	whatt = MODE_ADD, limitset = 0, count = 0, chasing = 0;
+	u_int	whatt = MODE_ADD;
+	int	limitset = 0, count = 0, chasing = 0;
 	int	nusers, ischop, new, len, keychange = 0, opcnt = 0;
+	char	fm = '\0';
 	aClient *who;
 	Mode	*mode, oldm;
 
@@ -614,9 +617,9 @@ char	*parv[], *mbuf, *pbuf;
 			    }
 	  		if (!IsMember(who, chptr))
 			    {
-	    			sendto_one(cptr, err_str(ERR_NOTONCHANNEL),
+	    			sendto_one(cptr, err_str(ERR_USERNOTINCHANNEL),
 					   me.name, cptr->name,
-					   chptr->chname, parv[0]);
+					   parv[0], chptr->chname);
 				break;
 			    }
 			/*
@@ -634,6 +637,14 @@ char	*parv[], *mbuf, *pbuf;
 					   *curr, who->name);
 			    }
 			if (who == cptr && whatt == MODE_ADD && *curr == 'o')
+				break;
+			/*
+			 * to stop problems, don't allow +v and +o to mix
+			 * into the one message if from a client.
+			 */
+			if (!fm)
+				fm = *curr;
+			else if (MyClient(sptr) && (*curr != fm))
 				break;
 			if (whatt == MODE_ADD)
 			    {
@@ -664,6 +675,10 @@ char	*parv[], *mbuf, *pbuf;
 			if (BadPtr(*parv))
 				break;
 			if (MyClient(sptr) && opcnt >= MAXMODEPARAMS)
+				break;
+			if (!fm)
+				fm = *curr;
+			else if (MyClient(sptr) && (*curr != fm))
 				break;
 			if (whatt == MODE_ADD)
 			    {
@@ -892,9 +907,9 @@ char	*parv[], *mbuf, *pbuf;
 			case MODE_BAN :
 				c = 'b';
 				cp = lp->value.cp;
-				if (user = index(cp, '!'))
+				if ((user = index(cp, '!')))
 					*user++ = '\0';
-				if (host = rindex(user ? user : cp, '@'))
+				if ((host = rindex(user ? user : cp, '@')))
 					*host++ = '\0';
 				cp = make_nick_user_host(cp, user, host);
 				break;
@@ -905,7 +920,7 @@ char	*parv[], *mbuf, *pbuf;
 			case MODE_LIMIT :
 				c = 'l';
 				(void)sprintf(numeric, "%-15d", nusers);
-				if (cp = index(numeric, ' '))
+				if ((cp = index(numeric, ' ')))
 					*cp = '\0';
 				cp = numeric;
 				break;
@@ -928,6 +943,8 @@ char	*parv[], *mbuf, *pbuf;
 				len++;
 				if (!ischop)
 					break;
+				if (strlen(cp) > KEYLEN)
+					*(cp+KEYLEN) = '\0';
 				if (whatt == MODE_ADD)
 					strncpyzt(mode->key, cp,
 						  sizeof(mode->key));
@@ -956,7 +973,7 @@ char	*parv[], *mbuf, *pbuf;
 				break;
 			case MODE_BAN :
 				if (ischop && ((whatt & MODE_ADD) &&
-				     !add_banid(chptr, cp) ||
+				     !add_banid(sptr, chptr, cp) ||
 				     (whatt & MODE_DEL) &&
 				     !del_banid(chptr, cp)))
 				    {
@@ -994,8 +1011,7 @@ char	*key;
 			return (ERR_INVITEONLYCHAN);
 	    }
 
-	if (!BadPtr(chptr->mode.key) &&
-	    (BadPtr(key) || mycmp(chptr->mode.key, key)))
+	if (*chptr->mode.key && (BadPtr(key) || mycmp(chptr->mode.key, key)))
 		return (ERR_BADCHANNELKEY);
 
 	if (chptr->mode.limit && chptr->users >= chptr->mode.limit)
@@ -1064,7 +1080,7 @@ int	flag;
 		len = CHANNELLEN;
 		*(chname+CHANNELLEN) = '\0';
 	    }
-	if (chptr = find_channel(chname, (aChannel *)NULL))
+	if ((chptr = find_channel(chname, (aChannel *)NULL)))
 		return (chptr);
 	if (flag == CREATE)
 	    {
@@ -1087,7 +1103,7 @@ aChannel *chptr;
 {
 	Reg1	Link	*inv, **tmp;
 
-	del_invite(cptr,chptr);
+	del_invite(cptr, chptr);
 	/*
 	 * delete last link in chain if the list is max length
 	 */
@@ -1124,19 +1140,17 @@ aChannel *chptr;
 {
 	Reg1	Link	**inv, *tmp;
 
-	for (inv = &(chptr->invites); *inv; inv = &((*inv)->next))
-		if ((*inv)->value.cptr == cptr)
+	for (inv = &(chptr->invites); (tmp = *inv); inv = &tmp->next)
+		if (tmp->value.cptr == cptr)
 		    {
-			tmp = *inv;
 			*inv = tmp->next;
 			free_link(tmp);
 			break;
 		    }
 
-	for (inv = &(cptr->user->invited); *inv; inv = &((*inv)->next))
-		if ((*inv)->value.chptr == chptr)
+	for (inv = &(cptr->user->invited); (tmp = *inv); inv = &tmp->next)
+		if (tmp->value.chptr == chptr)
 		    {
-			tmp = *inv;
 			*inv = tmp->next;
 			free_link(tmp);
 			break;
@@ -1147,10 +1161,9 @@ aChannel *chptr;
 **  Subtract one user from channel i (and free channel
 **  block, if channel became empty).
 */
-static	void	sub1_from_channel(xchptr)
-aChannel *xchptr;
+static	void	sub1_from_channel(chptr)
+Reg1	aChannel *chptr;
 {
-	Reg1	aChannel *chptr = xchptr;
 	Reg2	Link *tmp;
 	Link	*obtmp;
 
@@ -1159,8 +1172,8 @@ aChannel *xchptr;
 		/*
 		 * Now, find all invite links from channel structure
 		 */
-		while (tmp = chptr->invites)
-			del_invite(tmp->value.cptr, xchptr);
+		while ((tmp = chptr->invites))
+			del_invite(tmp->value.cptr, chptr);
 
 		tmp = chptr->banlist;
 		while (tmp)
@@ -1250,7 +1263,7 @@ char	*parv[];
 		*/
 		if (*name == '0' && !atoi(name))
 		    {
-			while (lp = sptr->user->channel)
+			while ((lp = sptr->user->channel))
 			    {
 				chptr = lp->value.chptr;
 				sendto_channel_butserv(chptr, sptr, PartFmt,
@@ -1347,14 +1360,14 @@ char	*parv[];
 	*buf = '\0';
 #endif
 
-	for (; name = strtoken(&p, parv[1], ","); parv[1] = NULL)
+	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
 		chptr = get_channel(sptr, name, 0);
 		if (!chptr)
 		    {
 			sendto_one(sptr, err_str(ERR_NOSUCHCHANNEL),
 				   me.name, parv[0], name);
-			return 0;
+			continue;
 		    }
 		if (check_channelmask(sptr, cptr, name))
 			continue;
@@ -1362,7 +1375,7 @@ char	*parv[];
 		    {
 			sendto_one(sptr, err_str(ERR_NOTONCHANNEL),
 		    		   me.name, parv[0], name);
-			return 0;
+			continue;
 		    }
 		/*
 		**  Remove user from the old channel (if any)
@@ -1413,7 +1426,7 @@ char	*parv[];
 
 	*nickbuf = *buf = '\0';
 
-	for (; name = strtoken(&p, parv[1], ","); parv[1] = NULL)
+	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
 		chptr = get_channel(sptr, name, !CREATE);
 		if (!chptr)
@@ -1436,7 +1449,7 @@ char	*parv[];
 		(void)strcat(buf, chptr->name);
 #endif
 
-		for (; user = strtoken(&p2, parv[2], ","); parv[2] = NULL)
+		for (; (user = strtoken(&p2, parv[2], ",")); parv[2] = NULL)
 		    {
 			if (!(who = find_chasing(sptr, user, &chasing)))
 				continue; /* No such user left! */
@@ -1455,7 +1468,7 @@ char	*parv[];
 #ifdef	V28PlusOnly
 				if (*nickbuf)
 					(void)strcat(nickbuf, ",");
-				(void)strcat(nickbuf, who->name);
+					(void)strcat(nickbuf, who->name);
 #else
 				sendto_match_servs(chptr, cptr,
 						   ":%s KICK %s %s :%s",
@@ -1465,7 +1478,7 @@ char	*parv[];
 				remove_user_from_channel(who, chptr);
 			    }
 			else
-				sendto_one(sptr, err_str(ERR_NOTONCHANNEL),
+				sendto_one(sptr, err_str(ERR_USERNOTINCHANNEL),
 					   me.name, parv[0], who->name, name);
 #ifndef	V28PlusOnly
 			if (!IsServer(cptr))
@@ -1528,7 +1541,7 @@ char	*parv[];
 		return 0;
 	    }
 
-	for (; name = strtoken(&p, parv[1], ","); parv[1] = NULL)
+	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
 		if (parc > 1 && IsChannelName(name))
 		    {
@@ -1626,7 +1639,7 @@ char	*parv[];
 	if (chptr && !IsMember(sptr, chptr))
 	    {
 		sendto_one(sptr, err_str(ERR_NOTONCHANNEL),
-			   me.name, parv[0], chptr->chname);
+			   me.name, parv[0], parv[2]);
 		return -1;
 	    }
 
@@ -1705,14 +1718,13 @@ char	*parv[];
 	if (hunt_server(cptr, sptr, ":%s LIST %s %s", 2, parc, parv))
 		return 0;
 
-	for (; name = strtoken(&p, parv[1], ","); parv[1] = NULL)
+	for (; (name = strtoken(&p, parv[1], ",")); parv[1] = NULL)
 	    {
 		chptr = find_channel(name, NullChn);
 		if (chptr && ShowChannel(sptr, chptr) && sptr->user)
 			sendto_one(sptr, rpl_str(RPL_LIST), me.name, parv[0],
 				   ShowChannel(sptr,chptr) ? name : "*",
-				   chptr->users,
-				   chptr->topic ? chptr->topic : "*");
+				   chptr->users, chptr->topic);
 	     }
 	sendto_one(sptr, rpl_str(RPL_LISTEND), me.name, parv[0]);
 	return 0;
@@ -1771,9 +1783,10 @@ char	*parv[];
 
 		/* Find users on same channel (defined by chptr) */
 
-		(void)strncpy(buf, "* ", 3);
+		(void)strcpy(buf, "* ");
 		len = strlen(chptr->chname);
-		(void)strcat(strncpy(buf + 2, chptr->chname, len+1), " :");
+		(void)strcpy(buf + 2, chptr->chname);
+		(void)strcpy(buf + 2 + len, " :");
 
 		if (PubChannel(chptr))
 			*buf = '=';
@@ -1886,7 +1899,7 @@ aClient	*cptr, *user;
 	for (lp = user->user->channel; lp; lp = lp->next)
 	    {
 		chptr = lp->value.chptr;
-		if (mask = index(chptr->chname, ':'))
+		if ((mask = index(chptr->chname, ':')))
 			if (matches(++mask, cptr->name))
 				continue;
 		if (strlen(chptr->chname) > (size_t) BUFSIZE - 2 - strlen(buf))

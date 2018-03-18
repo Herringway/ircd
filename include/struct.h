@@ -32,9 +32,8 @@
 #endif
 
 #ifdef USE_SYSLOG
-# ifdef HPUX
-#  include <syslog.h>
-# else
+# include <syslog.h>
+# ifndef HPUX
 #  include <sys/syslog.h>
 # endif
 #endif
@@ -68,6 +67,8 @@ typedef	struct	SMode	Mode;
 #define	KEYLEN		23
 #define	BUFSIZE		512		/* WARNING: *DONT* CHANGE THIS!!!! */
 #define	MAXRECIPIENTS 	20
+#define	MAXBANS		20
+#define	MAXBANLENGTH	1024
 
 #define	USERHOST_REPLYLEN	(NICKLEN+HOSTLEN+USERLEN+5)
 
@@ -152,6 +153,7 @@ typedef	struct	SMode	Mode;
 #define	FLAGS_LOCAL	0x10000 /* set for local clients */
 #define	FLAGS_GOTID	0x20000	/* successful ident lookup achieved */
 #define	FLAGS_DOID	0x40000	/* I-lines say must use ident return */
+#define	FLAGS_NONL	0x80000 /* No \n in buffer */
 
 #define	SEND_UMODES	(FLAGS_INVISIBLE|FLAGS_OPER|FLAGS_WALLOP)
 #define	ALL_UMODES	(SEND_UMODES|FLAGS_SERVNOTICE)
@@ -181,6 +183,7 @@ typedef	struct	SMode	Mode;
 #define	DoingDNS(x)		((x)->flags & FLAGS_DOINGDNS)
 #define	SetAccess(x)		((x)->flags |= FLAGS_CHKACCESS)
 #define	DoingAuth(x)		((x)->flags & FLAGS_AUTH)
+#define	NoNewLine(x)		((x)->flags & FLAGS_NONL)
 
 #define	ClearOper(x)		((x)->flags &= ~FLAGS_OPER)
 #define	ClearInvisible(x)	((x)->flags &= ~FLAGS_INVISIBLE)
@@ -242,10 +245,10 @@ struct	ConfItem	{
 #define	CONF_LISTEN_PORT	0x2000
 #define	CONF_HUB		0x4000
 
+#define	CONF_OPS		(CONF_OPERATOR | CONF_LOCOP)
 #define	CONF_SERVER_MASK	(CONF_CONNECT_SERVER | CONF_NOCONNECT_SERVER)
-#define	CONF_CLIENT_MASK	(CONF_CLIENT | CONF_CONNECT_SERVER | \
-				 CONF_LOCOP | CONF_NOCONNECT_SERVER | \
-				 CONF_OPERATOR | CONF_SERVICE)
+#define	CONF_CLIENT_MASK	(CONF_CLIENT | CONF_SERVICE | CONF_OPS | \
+				 CONF_SERVER_MASK)
 
 #define	IsIllegal(x)	((x)->status & CONF_ILLEGAL)
 
@@ -413,6 +416,7 @@ struct Channel	{
 
 #define	CHFL_CHANOP     0x0001 /* Channel operator */
 #define	CHFL_VOICE      0x0002 /* the power to speak */
+#define	CHFL_BAN	0x0004 /* ban channel flag */
 
 /* Channel Visibility macros */
 
@@ -435,8 +439,8 @@ struct Channel	{
 /*
  * Undefined here, these are used in conjunction with the above modes in
  * the source.
-#define	MODE_DEL       0x40000000
-#define	MODE_ADD       0x80000000
+#define	MODE_DEL       0x20000000
+#define	MODE_ADD       0x40000000
  */
 
 #define	HoldChannel(x)		(!(x))
@@ -472,8 +476,8 @@ struct Channel	{
 /* used in SetMode() in channel.c and m_umode() in s_msg.c */
 
 #define	MODE_NULL      0
-#define	MODE_ADD       0x80000000
-#define	MODE_DEL       0x40000000
+#define	MODE_ADD       0x40000000
+#define	MODE_DEL       0x20000000
 
 /* return values for hunt_server() */
 

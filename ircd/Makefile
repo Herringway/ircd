@@ -20,7 +20,7 @@
 CC=/bin/cc
 RM=/bin/rm
 CP=/bin/cp
-TOUCH=/bin/touch
+TOUCH=touch
 SHELL=/bin/sh
 BINDIR=/usr/local/lib/ircd
 INSTALL=/usr/bin/install
@@ -49,8 +49,12 @@ IRCDLIBS=
 # HPUX:
 #IRCDLIBS=-lBSD
 #
-# Solaris 2.0
-#IRCDLIBS= -lsocket -lnsl
+# Solaris 2
+#IRCDLIBS= -lsocket -lnsl -lresolv
+#
+# ESIX
+#CFLAGS=-O -I${INCLUDE} -I/usr/ucbinclude
+#IRCDLIBS=-L/usr/ucblib -L/usr/lib -lsocket -lucb -lresolv -lns -lnsl
 #
 #When profiling:
 #IRCDLIBS=-lc_p
@@ -131,19 +135,20 @@ lint:
 	(cd ../common; $(MAKE) build);
 
 install: all
-	if [ ! -d ${IRCDDIR} -a ! -f ${IRCDDIR} ] ; then \
-		mkdir ${IRCDDIR}; \
+	-if [ ! -d ${IRCDDIR} -a ! -f ${IRCDDIR} ] ; then \
+		-mkdir ${IRCDDIR}; \
 	fi
-	$(INSTALL) -csm ${IRCDMODE} ircd ${BINDIR}
-	$(INSTALL) -csm 700 chkconf ${BINDIR}
+	../install -c -s -m ${IRCDMODE} ircd ${BINDIR}
+	../install -c -s -m 700 chkconf ${BINDIR}
 	$(CP) ../doc/example.conf ${IRCDDIR}
 	$(TOUCH) ${IRCDDIR}/ircd.motd
 	$(RM) -f ${IRCDDIR}/ircd.m4
 	$(TOUCH) ${IRCDDIR}/ircd.m4
+	chmod +x ./buildm4
 	./buildm4 ${IRCDDIR}
 
 clean:
-	$(RM) -f *.o *~ core ircd version.c #* *.bak
+	$(RM) -f *.o *~ core ircd version.c #* *.bak chkconf
 
 depend:
 	makedepend -I${INCLUDE} ${SRC}
@@ -227,6 +232,8 @@ s_bsd.o: ../include/struct.h ../include/config.h ../include/dbuf.h
 s_bsd.o: ../include/sys.h
 s_auth.o: ../include/struct.h ../include/config.h ../include/dbuf.h
 s_auth.o: ../include/sys.h
+s_debug.o: ../include/config.h ../include/struct.h ../include/common.h
+s_debug.o: ../include/sys.h s_debug.c
 s_conf.o: ../include/struct.h ../include/config.h ../include/numeric.h
 s_conf.o: ../include/dbuf.h ../include/sys.h
 s_user.o: ../include/struct.h ../include/config.h
@@ -246,4 +253,6 @@ s_debug.o: ../include/struct.h ../include/common.h ../include/sys.h
 class.o: ../include/struct.h ../include/class.h ../include/numeric.h
 class.o: ../include/common.h
 hash.o: ../include/struct.h ../include/sys.h ../include/hash.h
+hash.o: ../include/struct.h ../include/sys.h ../include/hash.h s_serv.c
+hash.o: s_user.c channel.c s_misc.c s_bsd.c ircd.c hash.c version.c.SH
 version.o: version.c.SH

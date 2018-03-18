@@ -28,13 +28,6 @@
 #endif /* __STDC__ */
 #endif /* ! PROTO */
 
-#ifdef	__alpha
-#define	Long	int
-#define	U_Long	u_int
-#else
-#define	Long	long
-#define	U_Long	u_long
-#endif
 /*
 ** dbuf is a collection of functions which can be used to
 ** maintain a dynamic buffering of a byte stream.
@@ -50,13 +43,21 @@
 ** implementation of this package without changing the
 ** interface.
 */
+#if !defined(_SEQUENT_)
 typedef struct dbuf
     {
-	U_Long	length;	/* Current number of bytes stored */
-	U_Long	offset;	/* Offset to the first byte */
+	u_int	length;	/* Current number of bytes stored */
+	u_int	offset;	/* Offset to the first byte */
 	struct	dbufbuf *head;	/* First data buffer, if length > 0 */
     } dbuf;
-
+#else
+typedef struct dbuf
+    {
+        uint   length; /* Current number of bytes stored */
+        uint   offset; /* Offset to the first byte */
+        struct  dbufbuf *head;  /* First data buffer, if length > 0 */
+    } dbuf;
+#endif
 /*
 ** And this 'dbufbuf' should never be referenced outside the
 ** implementation of 'dbuf'--would be "hidden" if C had such
@@ -81,7 +82,7 @@ typedef struct dbufbuf
 **	returns	> 0, if operation successfull
 **		< 0, if failed (due memory allocation problem)
 */
-int	dbuf_put PROTO((dbuf *, char *, Long));
+int	dbuf_put PROTO((dbuf *, char *, int));
 					/* Dynamic buffer header */
 	     				/* Pointer to data to be stored */
 	     				/* Number of bytes to store */
@@ -101,7 +102,7 @@ int	dbuf_put PROTO((dbuf *, char *, Long));
 **		Negative return values indicate some unspecified
 **		error condition, rather fatal...
 */
-Long	dbuf_get PROTO(( dbuf *, char *, Long));
+int	dbuf_get PROTO(( dbuf *, char *, int));
 				/* Dynamic buffer header */
 	     			/* Pointer to buffer to receive the data */
 	     			/* Max amount of bytes that can be received */
@@ -134,7 +135,7 @@ char *dbuf_map PROTO((dbuf *, int *));
 	       				/* Dynamic buffer header */
 	       				/* Return number of bytes accessible */
 
-int dbuf_delete PROTO((dbuf *, Long));
+int dbuf_delete PROTO((dbuf *, int));
 					/* Dynamic buffer header */
 					/* Number of bytes to delete */
 

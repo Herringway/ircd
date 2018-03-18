@@ -21,16 +21,15 @@
 
 #define	BSD			/* 4.2 BSD, 4.3 BSD, SunOS 3.x, 4.x, Apollo */
 /*	HPUX			Nothing needed (A.08.07) */
-/*	ULTRIX			Nothing needed (4.2) *
-/*	OSF			Nothing needed (1.2) *
+/*	ULTRIX			Nothing needed (4.2) */
+/*	OSF			Nothing needed (1.2) */
 #undef	AIX			/* IBM ugly so-called Unix, AIX */
 #undef	MIPS			/* MIPS Unix */
 /*	SGI			Nothing needed (IRIX 4.0.4) */
-#undef	SVR3			/* SVR3 stuff - being worked on where poss. */
-#undef	DYNIXPTX		/* Sequents Brain-dead Posix implement.
-				 * Also #define SYSV
-				 */
+#undef 	SVR3			/* SVR3 stuff - being worked on where poss. */
+#undef	DYNIXPTX		/* Sequents Brain-dead Posix implement. */
 #undef	SOL20			/* Solaris2 */
+#undef	ESIX			/* ESIX */
 
 /* Do these work? I dunno... */
 
@@ -69,7 +68,7 @@
 #undef	NEED_INET_ADDR  	/* You need inet_addr(3)	*/
 #undef	NEED_INET_NTOA  	/* You need inet_ntoa(3)	*/
 #undef	NEED_INET_NETOF 	/* You need inet_netof(3)	*/
-#undef	NEED_STRCASECMP		/* Your libc.a does not have strcasecmp(3s)
+#undef	NEED_STRCASECMP		/* You need strcasecmp(3s)
 				 * which also implies strncasecmp(3s) */
 /*
  * NOTE: On some systems, valloc() causes many problems.
@@ -93,8 +92,8 @@
 /*
  * Define POSIX_SIGNALS if your system has the POSIX signal library.
  *
- * Dynix/ptx users should define this and not the others above as well as
- * DYNIXPTX above.
+ * Dynix/ptx users should define POSIX_SIGNALS only, as well as DYNIXPTX
+ * above.
  *
  * POSIX_SIGNALS are RELIABLE. NOTE: these may *NOT* be used automatically
  * by your system when you compile so define here to make sure.
@@ -162,10 +161,10 @@
  * into this server. Logging will stop when the file does not exist.
  * Logging will be disable also if you do not define this.
  * FNAME_USERLOG just logs user connections, FNAME_OPERLOG logs every
- * successful use of /oper
+ * successful use of /oper.  These are either full paths or files within DPATH.
  */
 /* #define FNAME_USERLOG "/usr/local/lib/ircd/users" /* */
-/* #define FNAME_OPERLOG "/usr/local/lib/ircd/users" /* */
+/* #define FNAME_OPERLOG "/usr/local/lib/ircd/opers" /* */
 
 /* CHROOTDIR
  *
@@ -212,13 +211,18 @@
  * commands however.  OPER_REHASH and OPER_RESTART allow operators to
  * issue the REHASH and RESTART commands when connected to your server.
  * Left undefined they increase the security of your server from wayward
- * operators and accidents.  The 'LOCOP_' #defines are for making the
- * respective commands available to 'local' operators.
+ * operators and accidents.  Defining OPER_REMOTE removes the restriction
+ * that O-lines only become fully effective for people on the 'same network'
+ * as the server.  Undefined, it increases the secrity of the server by
+ * placing restrictions on where people can use operator powers from.
+ * The 'LOCOP_' #defines are for making the respective commands available
+ * to 'local' operators.
  */
 #undef	OPER_KILL
 #undef	OPER_REHASH
 #undef	OPER_RESTART
 #undef	OPER_DIE
+#undef	OPER_REMOTE
 #undef	LOCOP_REHASH
 #undef	LOCOP_RESTART
 #undef	LOCOP_DIE
@@ -299,7 +303,7 @@
  * The server will then call m4 each time it reads the ircd.conf file,
  * reading m4 output as the server's ircd.conf file.
  */
-#undef	M4_PREPROC
+#define	M4_PREPROC
 
 /*
  * If you wish to have the server send 'vital' messages about server
@@ -311,7 +315,7 @@
  */
 #undef	USE_SYSLOG
 
-#ifdef USE_SYSLOG
+#ifdef	USE_SYSLOG
 /*
  * If you use syslog above, you may want to turn some (none) of the
  * spurious log messages for KILL/SQUIT off.
@@ -333,7 +337,7 @@
  * define this if you want to use crypted passwords for operators in your
  * ircd.conf file. See ircd/crypt/README for more details on this.
  */
-#undef	CRYPT_OPER_PASSWORD
+#define	CRYPT_OPER_PASSWORD
 
 /*
  * If you want to store encrypted passwords in N-lines for server links,
@@ -403,6 +407,15 @@
 #define	IRC_GID	65534
 #endif
 
+/*
+ * CLIENT_FLOOD
+ *
+ * this controls the number of bytes the server will allow a client to
+ * send to the server without processing before disconnecting the client for
+ * flooding it.  Values greater than 8000 make no difference to the server.
+ */
+#define	CLIENT_FLOOD	1024
+
 /* Default server for standard client */
 #define	UPHOST	"coombs.anu.edu.au"
 
@@ -414,7 +427,7 @@
 
 /* You shouldn't change anything below this line, unless absolutely needed. */
 
-#ifdef  OPER_KILL
+#ifdef	OPER_KILL
 /* LOCAL_KILL_ONLY
  *
  * To be used, OPER_KILL must be defined.
@@ -427,7 +440,7 @@
  *	 of KILL for non-local clients should be punished by removal of the
  *	 server's links (if only for ignoring this warning!).
  */
-#undef  LOCAL_KILL_ONLY
+#undef	LOCAL_KILL_ONLY
 #endif
 /*
  * Port where ircd resides. NOTE: This *MUST* be greater than 1024 if you
@@ -507,7 +520,7 @@
  * CONNECTTIMEOUT - 10 seconds for its host to respond to an ident lookup
  * query and for a DNS answer to be retrieved.
  */
-#define	CONNECTTIMEOUT     30	/* Recommended value: 30 */
+#define	CONNECTTIMEOUT	30	/* Recommended value: 30 */
 
 /*
  * Max time from the nickname change that still causes KILL
@@ -545,6 +558,16 @@
 #endif
 #endif
 
+#ifdef _SEQUENT_		/* Dynix 1.4 or 2.0 Generic Define.. */
+#undef BSD
+#define SYSV			/* Also #define SYSV */
+#undef	BSD_RELIABLE_SIGNALS
+#undef	SYSV_UNRELIABLE_SIGNALS
+# ifndef POSIX_SIGNALS
+#define	POSIX_SIGNALS
+# endif
+#endif
+
 #ifdef	ultrix
 #define	ULTRIX
 #endif
@@ -559,6 +582,7 @@
 
 #ifdef	CLIENT_COMPILE
 #undef	SENDQ_ALWAYS
+#undef	NPATH		/* _dl */
 #endif
 
 #ifdef DEBUGMODE
@@ -583,10 +607,6 @@ extern	void	debug();
 #undef	TIMES_2
 #endif
 
-#ifdef	CLIENT_COMPILE
-#undef	SENDQ_ALWAYS
-#endif
-
 #if defined(mips) || defined(PCS)
 #undef SYSV
 #endif
@@ -600,7 +620,7 @@ extern	void	debug();
 #define SEQ_NOFILE    128        /* set to your current kernel impl, */
 #endif                           /* max number of socket connections */
 
-#ifdef	DYNIXPTX
+#if defined(DYNIXPTX) && !defined(POSIX_SIGNALS)
 #define	POSIX_SIGNALS
 #endif
 
@@ -622,11 +642,15 @@ error You stuffed up config.h signals #defines use only one.
 #define	HAVE_RELIABLE_SIGNALS
 #endif
 
-#ifndef	HUB
-#define	MAXIMUM_LINKS	1
-#undef	MAXSENDQLENGTH
-#define	MAXSENDQLENGTH	100000
+#ifdef	CLIENT_COMPILE
+#undef	SENDQ_ALWAYS
 #endif
+
+/*
+ * safety margin so we can always have one spare fd, for motd/authd or
+ * whatever else.
+ */
+#define	MAXCLIENTS	(MAXCONNECTIONS-1)
 
 #ifdef HAVECURSES
 # define DOCURSES
@@ -642,6 +666,14 @@ error You stuffed up config.h signals #defines use only one.
 
 #ifndef	UNIXPORT
 #undef	UNIXPORTPATH
+#endif
+
+#if defined(CLIENT_FLOOD)
+# if	(CLIENT_FLOOD > 8000) || (CLIENT_FLOOD < 512)
+error CLIENT_FLOOD needs redefining.
+# endif
+#else
+error CLIENT_FLOOD undefined
 #endif
 
 /*
@@ -671,9 +703,3 @@ error You stuffed up config.h signals #defines use only one.
 #define Reg8 register
 #define Reg9 register
 #define Reg10 register
-#define Reg11 
-#define Reg12 
-#define Reg13 
-#define Reg14 
-#define Reg15 
-#define Reg16

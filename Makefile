@@ -17,19 +17,19 @@
 #*   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 #*/
 
-CC=cc 
+CC=cc
 RM=/bin/rm
 INCLUDEDIR=../include
 
 # Default flags:
-CFLAGS= -I$(INCLUDEDIR) -g
+CFLAGS= -I$(INCLUDEDIR) -O
 IRCDLIBS=
 IRCLIBS=-lcurses -ltermcap
 #
 # use the following on MIPS:
 #CFLAGS= -systype bsd43 -DSYSTYPE_BSD43 -I$(INCLUDEDIR)
 # For Irix 4.x (SGI), use the following:
-#CFLAGS= -g -cckr -I${INCLUDE}
+#CFLAGS= -O -cckr -I${INCLUDE}
 #
 # on NEXT use:
 #CFLAGS=-bsd -I$(INCLUDEDIR)
@@ -41,16 +41,25 @@ IRCLIBS=-lcurses -ltermcap
 #IRCDLIBS=-lbsd
 #IRCLIBS=-lcurses -lcur
 #
-# Dynix/ptx V1.3.1
-#IRCDLIBS= -lsocket -linet -lseq -lnsl
+# Dynix/ptx V2.0.x
+#CFLAGS= -I$(INCLUDEDIR) -O -Xo
+#IRCDLIBS= -lsocket -linet -lnsl -lseq
+#IRCLIBS=-ltermcap -lcurses -lsocket -linet -lnsl -lseq
+# 
+# Dynix/ptx V1.x.x
+#IRCDLIBS= -lsocket -linet -lnsl -lseq
 #
 #use the following on SUN OS without nameserver libraries inside libc
 #IRCDLIBS= -lresolv
 #
-# Solaris 2.0
-#IRCDLIBS= -lsocket -lnsl
+# Solaris 2
+#IRCDLIBS= -lresolv -lsocket -lnsl
 #IRCLIBS=-lcurses -ltermcap -lsocket -lnsl
-
+#
+# ESIX
+#CFLAGS=-O -I${INCLUDE} -I/usr/ucbinclude
+#IRCDLIBS=-L/usr/ucblib -L/usr/lib -lsocket -lucb -lresolv -lns -lnsl
+#
 # LDFLAGS - flags to send the loader (ld). SunOS users may want to add
 # -Bstatic here.
 #
@@ -69,7 +78,7 @@ IRCDDIR=/usr/local/lib/ircd
 
 SHELL=/bin/sh
 SUBDIRS=common ircd irc
-BINDIR=/usr/local/bin
+BINDIR=$(IRCDDIR)
 MANDIR=/usr/local/man
 INSTALL=/usr/bin/install
 
@@ -108,13 +117,14 @@ depend:
 	done
 
 install: all
+	chmod +x ./install
 	@for i in ircd irc; do \
 		echo "Installing $$i";\
 		cd $$i;\
 		${MAKE} install; cd ..;\
 	done
-	${INSTALL} -c doc/ircd.8 ${MANDIR}/man8
-	${INSTALL} -c doc/irc.1 ${MANDIR}/man1
+	./install -c -m 644 doc/ircd.8 ${MANDIR}/man8
+	./install -c -m 644 doc/irc.1 ${MANDIR}/man1
 
 
 rcs:
