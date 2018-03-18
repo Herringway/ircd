@@ -22,7 +22,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: s_user.c,v 1.34 1998/01/23 13:36:43 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: s_user.c,v 1.38 1998/02/10 23:17:24 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -1051,9 +1051,8 @@ int	parc, notice;
 					   parv[0]), nick);
 				continue;
 			    }
-			if (match(nick + 1, sptr->user->server) &&
-			    (*nick == '$' ||
-			     match(nick + 1, sptr->user->host)))
+			if ((s = (char *)rindex(ME, '.')) &&
+			    strcasecmp(rindex(nick, '.'), s))
 			    {
 				sendto_one(sptr, err_str(ERR_BADMASK,
 					   parv[0]), nick);
@@ -1395,7 +1394,7 @@ char	*parv[];
 		else 
 		    {
 			who_find(sptr, mask, oper);
-			if (mask && strlen(mask) > 4)
+			if (mask && (int)strlen(mask) > 4)
 				penalty += 3;
 			else
 				penalty += 5;
@@ -2241,9 +2240,11 @@ char	*parv[];
 		encr = "";
 #endif
 #if defined(USE_SYSLOG) && defined(SYSLOG_OPER)
-		syslog(LOG_INFO, "OPER (%s) (%s) by (%s!%s@%s)",
+		syslog(LOG_INFO, "OPER (%s) (%s) by (%s!%s@%s) [%s@%s]",
 			name, encr,
-			parv[0], sptr->user->username, sptr->sockhost);
+		       parv[0], sptr->user->username, sptr->user->host,
+		       sptr->auth, IsUnixSocket(sptr) ? sptr->sockhost :
+                       inetntoa((char *)&sptr->ip));
 #endif
 #ifdef FNAME_OPERLOG
 	      {
@@ -2262,9 +2263,11 @@ char	*parv[];
 		    (logfile = open(FNAME_OPERLOG, O_WRONLY|O_APPEND)) != -1)
 		{
 		  (void)alarm(0);
-			SPRINTF(buf, "%s OPER (%s) (%s) by (%s!%s@%s)\n",
-				    myctime(timeofday), name, encr, parv[0],
-				    sptr->user->username, sptr->sockhost);
+		  SPRINTF(buf, "%s OPER (%s) (%s) by (%s!%s@%s) [%s@%s]\n",
+			  myctime(timeofday), name, encr,
+			  parv[0], sptr->user->username, sptr->user->host,
+			  sptr->auth, IsUnixSocket(sptr) ? sptr->sockhost :
+			  inetntoa((char *)&sptr->ip));
 		  (void)alarm(3);
 		  (void)write(logfile, buf, strlen(buf));
 		  (void)alarm(0);

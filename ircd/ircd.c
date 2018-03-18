@@ -19,7 +19,7 @@
  */
 
 #ifndef lint
-static  char rcsid[] = "@(#)$Id: ircd.c,v 1.12 1997/11/13 02:02:08 kalt Exp $";
+static  char rcsid[] = "@(#)$Id: ircd.c,v 1.14 1998/02/18 18:41:34 kalt Exp $";
 #endif
 
 #include "os.h"
@@ -234,11 +234,7 @@ time_t	currenttime;
 		** a D(eny) line.
 		*/
 		if (find_denied(aconf->name, Class(cltmp)))
-		    {
-			sendto_flag(SCH_DEBUG, "%s", aconf->name);
 			continue;
-		    }
-		sendto_flag(SCH_DEBUG, "%s OK", aconf->name);
 		/* We have a candidate, let's see if it could be the best. */
 		if (!cptr && (Links(cltmp) < MaxLinks(cltmp)) &&
 		    (!con_conf ||
@@ -485,7 +481,8 @@ aClient	*mp;
 	struct	passwd	*p;
 
 	p = getpwuid(getuid());
-	strncpyzt(mp->username, p->pw_name, sizeof(mp->username));
+	strncpyzt(mp->username, (p) ? p->pw_name : "unknown",
+		  sizeof(mp->username));
 	(void)get_my_name(mp, mp->sockhost, sizeof(mp->sockhost)-1);
 	if (mp->name[0] == '\0')
 		strncpyzt(mp->name, mp->sockhost, sizeof(mp->name));
@@ -508,7 +505,8 @@ aClient	*mp;
 	mp->user->flags |= FLAGS_OPER;
 	mp->serv->up = mp->name;
 	mp->user->server = find_server_string(mp->serv->snum);
-	strncpyzt(mp->user->username, p->pw_name, sizeof(mp->user->username));
+	strncpyzt(mp->user->username, (p) ? p->pw_name : "unknown",
+		  sizeof(mp->user->username));
 	(void) strcpy(mp->user->host, mp->name);
 
 	(void)add_to_client_hash_table(mp->name, mp);

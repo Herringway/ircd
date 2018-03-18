@@ -1,3 +1,31 @@
+Tue Feb 17 21:25:02 1998  Christophe Kalt
+
+	* s_bsd.c: w32 doesn't have a working fork().
+	
+	* ircd.c: deal with "getpwuid(getuid())" returning NULL.
+	
+	* configure.in, os.h, support.c: use our own truncate() when
+	needed (CYGWIN32), and CYGWIN32 portability.  (Thanks to Dave
+	Miller <yahoo@molalla.net>).
+
+	* config.guess: update.
+
+	* s_user.c: broadcast restriction wasn't right (Yegg).
+
+	* send.c, ircd.c: removed noisy debugging notices.
+
+Sat Feb  7 09:21:52 1998  Christophe Kalt
+
+	* s_user.c:
+		* oper log is now more verbose.
+		* broadcast messages/notices are now less restricted.
+
+	* hash.c: nitpicking (from Magnus Tjernstrom).
+
+	* configure.in: quoting cleanup (from Alain).
+
+	* send_ext.h, s_debug.h: STDARG prototyping cleanup (from Alain).
+
 Fri Jan 23 17:39:17 1998  Christophe Kalt
 
 	* os.h: linux 2.1 implements poll() but the header files are a
@@ -32,7 +60,7 @@ Fri Jan 23 17:38:36 1998  Christophe Kalt
 
 	* buidm4: yet another m4 booboo. (fix from Mario)
 
-Wed Jan  7 11:40:59 1998  Christophe Kalt  <kalt@millennium.stealth.net>
+Wed Jan  7 11:40:59 1998  Christophe Kalt
 
 	* s_user.c: strncpy() lameness.
 
