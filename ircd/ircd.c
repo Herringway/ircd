@@ -91,11 +91,11 @@ VOIDSIG restart()
 #ifdef USE_SYSLOG
 	closelog();
 #endif
-	for (i = (debugtty == 0 && debuglevel < 0) ? 0:3; i < MAXFD; i++)
-		shutdown(i, 2);
-	shutdown(1,2);	/* not used for anything but skipped above */
+	for (i = (debugtty == 0 && debuglevel < 0) ? 0:3; i < 255; i++)
+		close(i);
+	close(1);	/* not used for anything but skipped above */
 	if (debugtty >= 0)
-		shutdown(0,2);	/* close fd 0 */
+		close(0);	/* close fd 0 */
 	execv(MYNAME, myargv);
 #ifdef USE_SYSLOG
 	/* Have to reopen since it has been closed above */
@@ -123,7 +123,7 @@ long currenttime;
   Reg1 aConfItem *aconf;
   Reg2 aClient *cptr;
   aConfItem **pconf;
-  int connecting = 0, confrq = 0;
+  int connecting, confrq;
   long next = 0;
   aClass *cltmp;
   aConfItem *con_conf;
@@ -264,6 +264,8 @@ long currenttime;
       oldest = currenttime;
     if (!smallp)
       smallp = PINGFREQUENCY;
+    if (oldest == currenttime)
+      oldest += smallp;
     debug(DEBUG_NOTICE,"Next check_ping() call at: %s, %d %d %d",
 	  myctime(oldest + smallp),smallp,oldest,currenttime);
   return (oldest);
@@ -289,9 +291,9 @@ static int bad_command()
   return -1;
 }
 
-main(argc, argv)
-int argc;
-char *argv[];
+int	main(argc, argv)
+int	argc;
+char	*argv[];
 {
 	aClient *cptr;
 	int	bootopt = 0, foo;
@@ -306,10 +308,10 @@ char *argv[];
 	signal(SIGALRM, dummy);   
 	signal(SIGTERM, terminate); 
 	signal(SIGINT, restart);
-#if !DEBUGMODE
+#ifndef	DEBUGMODE
 	signal(SIGQUIT, SIG_IGN);
 #endif
-#if RESTARTING_SYSTEMCALLS
+#ifdef RESTARTING_SYSTEMCALLS
 	/*
 	** At least on Apollo sr10.1 it seems continuing system calls
 	** after signal is the default. The following 'siginterrupt'
@@ -387,11 +389,23 @@ char *argv[];
 	setuid(geteuid());
 	if (getuid() == 0)
 	    {
+
+#if defined(IRC_UID) && defined(IRC_GID)
+
+		/* run as a specified user */
+		fprintf(stderr,"WARNING: running ircd with uid = %d\n", IRC_UID
+			);
+		fprintf(stderr,"         changing to gid %d.\n",IRC_GID);
+		setuid(IRC_UID);
+		setgid(IRC_GID);
+#else
+	/* check for setuid root as usual */
 		fprintf(stderr,
 			"ERROR: do not run ircd setuid root. Make it setuid a\
  normal user.\n"
 			);
 		exit(-1);
+#endif	
 	    } 
 
 	if (debuglevel == -1)  /* didn't set debuglevel */
@@ -436,6 +450,11 @@ char *argv[];
 	SetMe(&me);
 	me.lasttime = me.since = me.firsttime = time(NULL);
 	add_to_client_hash_table(me.name, &me);
+
+#ifdef	UNIXPORT
+	cptr = make_client((aClient *)NULL);
+	unixport(portnum, cptr);
+#endif
 
 	check_class();
 	if (debugtty == -1) {

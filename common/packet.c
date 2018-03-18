@@ -32,10 +32,10 @@ extern aClient me;
 **	with cptr of "local" variation, which contains all the
 **	necessary fields (buffer etc..)
 */
-dopacket(cptr, buffer, length)
+int	dopacket(cptr, buffer, length)
 aClient *cptr;
-char *buffer;
-int length;
+char	*buffer;
+int	length;
     {
 	Reg1 char *ch1;
 	Reg2 char *ch2;
@@ -66,11 +66,13 @@ int length;
 				** that cptr structure *does*
 				** not exist anymore!!! --msa
 				*/
-				return(0);
+				return(1);
 #ifndef CLIENT_COMPILE
 			if (cptr->flags & FLAGS_DEADSOCKET)
-				return (exit_client(cptr,cptr,&me,
-						    "Dead Socket"));
+			    {
+				exit_client(cptr,cptr,&me,"Dead Socket");
+				return (-1);
+			    }
 #endif
 			ch1 = cptr->buffer;
 		    }

@@ -17,18 +17,6 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-/*
- * $Id: support.c,v 6.1 1991/07/04 21:04:01 gruner stable gruner $
- *
- * $Log: support.c,v $
- * Revision 6.1  1991/07/04  21:04:01  gruner
- * Revision 2.6.1 [released]
- *
- * Revision 6.0  1991/07/04  18:04:55  gruner
- * frozen beta revision 2.6.1
- *
- */
-
 #include "config.h"
 #include "common.h"
 #include "sys.h"
@@ -36,7 +24,7 @@
 
 extern int errno; /* ...seems that errno.h doesn't define this everywhere */
 
-#if NEED_STRTOKEN
+#ifdef NEED_STRTOKEN
 /*
 ** 	strtoken.c --  	walk through a string of tokens, using a set
 **			of separators
@@ -74,7 +62,9 @@ char *str, *fs;
     *save = pos;
     return(tmp);
 }
+#endif /* NEED_STRTOKEN */
 
+#ifdef	NEED_STRTOK
 /*
 ** NOT encouraged to use!
 */
@@ -87,9 +77,9 @@ char *str, *fs;
     return strtoken(&pos, str, fs);
 }
 
-#endif /* NEED_STRTOKEN */
+#endif /* NEED_STRTOK */
 
-#if NEED_STRERROR
+#ifdef NEED_STRERROR
 /*
 **	strerror - return an appropriate system error string to a given errno
 **
@@ -109,7 +99,7 @@ int err_no;
 
 #endif /* NEED_STRERROR */
 
-#if NEED_INET_NTOA
+#ifdef NEED_INET_NTOA
 /*
 **	inet_ntoa --	returned the dotted notation of a given
 **			internet number (some ULTRIX don't have this)
@@ -130,7 +120,7 @@ struct in_addr in;
 }
 #endif /* NEED_INET_NTOA */
 
-#if NEED_INET_ADDR
+#ifdef NEED_INET_ADDR
 /*
 **	inet_addr --	convert a character string
 **			to the internet number
@@ -148,7 +138,6 @@ char *host;
     Reg2 int i = 0;
     char hosttmp[16];
     struct in_addr addr;
-    extern char *strtok();
     extern int atoi();
 
     if (host == NULL)
@@ -171,7 +160,7 @@ char *host;
 }
 #endif /* NEED_INET_ADDR */
 
-#if NEED_INET_NETOF
+#ifdef NEED_INET_NETOF
 /*
 **	inet_netof --	return the net portion of an internet number
 **			argv 11/90
@@ -194,10 +183,29 @@ struct in_addr in;
 }
 #endif /* NEED_INET_NETOF */
 
+
+char    *MyMalloc(x)
+int     x;
+    {
+	char *ret = (char *) malloc(x);
+
+	if (!ret)
+	    {
+#ifndef	CLIENT_COMPILE
+		debug(0,"Out of memory: restarting server...");
+		restart();
+#else
+		perror("malloc");
+		exit(-1);
+#endif
+	    }
+	return ret;
+    }
+
 #ifdef USE_OUR_CTYPE
 
-char	tolowertab[] =
-		{ -1, 0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa,
+unsigned char tolowertab[] =
+		{ 0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa,
 		  0xb, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11, 0x12, 0x13, 0x14,
 		  0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
 		  0x1e, 0x1f,
@@ -230,8 +238,8 @@ char	tolowertab[] =
 		  0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,
 		  0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff };
 
-char	touppertab[] =
-		{ -1, 0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa,
+unsigned char touppertab[] =
+		{ 0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa,
 		  0xb, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11, 0x12, 0x13, 0x14,
 		  0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
 		  0x1e, 0x1f,
@@ -264,8 +272,7 @@ char	touppertab[] =
 		  0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,
 		  0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff };
 
-char char_atribs[] = {
-/* EOF */       0,
+unsigned char char_atribs[] = {
 /* 0-7 */	CNTRL, CNTRL, CNTRL, CNTRL, CNTRL, CNTRL, CNTRL, CNTRL,
 /* 8-12 */	CNTRL, CNTRL|SPACE, CNTRL|SPACE, CNTRL|SPACE, CNTRL|SPACE,
 /* 13-15 */	CNTRL|SPACE, CNTRL, CNTRL,

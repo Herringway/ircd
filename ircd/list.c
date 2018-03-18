@@ -46,7 +46,9 @@ char list_id[] = "list.c v2.0 (c) 1988 University of Oulu, Computing Center\
 extern aClient *client;
 extern aConfItem *conf;
 
-static outofmemory()
+int	numclients = 0;
+
+static int outofmemory()
     {
 	debug(DEBUG_FATAL, "Out of memory: restarting server...");
 	restart();
@@ -73,24 +75,24 @@ aClient *from;
 	if ((cptr = (aClient *) calloc(1, size)) == NULL)
 		outofmemory();
 
+	numclients++;
+
 	/* Note:  structure is zero (calloc) */
 	cptr->from = from ? from : cptr; /* 'from' of local client is self! */
 	cptr->next = NULL; /* For machines with NON-ZERO NULL pointers >;) */
 	cptr->prev = NULL;
+	cptr->hnext = NULL;
 	cptr->user = NULL;
 	cptr->history = NULL;
 	cptr->status = STAT_UNKNOWN;
 	cptr->fd = -1;
-	cptr->hopcount = 0;
 	if (size == CLIENT_LOCAL_SIZE) {
 	  cptr->since = cptr->lasttime = cptr->firsttime = time(NULL);
-	  cptr->confs = (Link *) 0;
+	  cptr->confs = (Link *)NULL;
 	  cptr->sockhost[0] = '\0';
 #ifdef DOUBLE_BUFFER
-	  cptr->ocount = 0;
 	  cptr->obuffer[0] = '\0';
 #endif
-	  cptr->count = 0;
 	  cptr->buffer[0] = '\0';
 	}
 	return (cptr);
@@ -100,18 +102,18 @@ aClient *from;
 ** 'make_user' add's an User information block to a client
 ** if it was not previously allocated.
 */
-make_user(sptr)
+anUser	*make_user(sptr)
 aClient *sptr;
     {
 	if (sptr->user != NULL)
-		return -1;
+		return sptr->user;
 	sptr->user = (anUser *)MyMalloc(sizeof(anUser));
 	bzero((char *)sptr->user,sizeof(anUser));
 	sptr->user->away = NULL;
 	sptr->user->refcnt = 1;
 	sptr->user->channel = NULL;
 	sptr->user->invited = NULL;
-	return 0;
+	return sptr->user;
     }
 
 /*
@@ -119,22 +121,25 @@ aClient *sptr;
 **	Decrease user reference count by one and realease block,
 **	if count reaches 0
 */
-free_user(user)
-anUser *user;
+anUser	*free_user(user)
+anUser	*user;
     {
 	if (--user->refcnt == 0)
 	    {
 		if (user->away)
 			free(user->away);
 		free(user);
+		return NULL;
 	    }
+	else
+		return user;
     }
 
 /*
  * taken the code from ExitOneClient() for this and placed it here.
  * - avalon
  */
-remove_client_from_list(cptr)
+int remove_client_from_list(cptr)
 aClient	*cptr;
 {
 	if (cptr->prev)
@@ -146,10 +151,13 @@ aClient	*cptr;
 	if (cptr->next)
 		cptr->next->prev = cptr->prev;
 	if (cptr->user) {
+		add_history(cptr);
 		off_history(cptr);
 		free_user(cptr->user);
 	}
 	free(cptr);
+	numclients--;
+	return 0;
 }
 
 /*
@@ -158,7 +166,7 @@ aClient	*cptr;
  * in this file, shouldnt they ?  after all, this is list.c, isnt it ?
  * -avalon
  */
-add_client_to_list(cptr)
+int add_client_to_list(cptr)
 aClient	*cptr;
 {
 	/*
@@ -169,6 +177,7 @@ aClient	*cptr;
 	client = cptr;
 	if (cptr->next)
 		cptr->next->prev = cptr;
+	return 0;
 }
 
 /*

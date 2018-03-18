@@ -50,8 +50,7 @@ static	dbufbuf	*freelist = NULL;
 ** up, so... -- Wumpus
 */
 
-/*#define DBUFSIZ sizeof(((dbufbuf *)0)->data)*/
-#define	DBUFSIZ	2044
+#define DBUFSIZ sizeof(((dbufbuf *)0)->data)
 
 /*
 ** dbuf_alloc - allocates a dbufbuf structure either from freelist or
@@ -59,7 +58,8 @@ static	dbufbuf	*freelist = NULL;
 */
 static dbufbuf *dbuf_alloc()
 {
-	Reg1	dbufbuf	*dbptr;
+	Reg1	dbufbuf	*dbptr, *db2ptr;
+	Reg2	int	num;
 
 	dbufalloc++;
 	if (dbptr = freelist)
@@ -67,8 +67,29 @@ static dbufbuf *dbuf_alloc()
 		freelist = freelist->next;
 		return dbptr;
 	    }
+
+#ifdef	VALLOC
+	num = getpagesize()/sizeof(dbufbuf);
+	if (num < 0)
+		num = 1;
+
+	dbufblocks += num;
+
+	dbptr = (dbufbuf *)valloc(num*sizeof(dbufbuf));
+	if (!dbptr)
+		return (dbufbuf *)NULL;
+
+	for (db2ptr = dbptr; num > 1; num--)
+	    {
+		db2ptr = (dbufbuf *)((char *)dbptr + sizeof(dbufbuf));
+		db2ptr->next = freelist;
+		freelist = db2ptr;
+	    }
+	return dbptr;
+#else
 	dbufblocks++;
-	return (dbufbuf *)calloc(1,sizeof(dbufbuf));
+	return (dbufbuf *)MyMalloc(sizeof(dbufbuf));
+#endif
 }
 /*
 ** dbuf_free - return a dbufbuf structure to the freelist
@@ -102,14 +123,14 @@ dbuf *dyn;
     }
 
 
-int dbuf_put(dyn, buf, length)
-dbuf *dyn;
-char *buf;
-long length;
+int	dbuf_put(dyn, buf, length)
+dbuf	*dyn;
+char	*buf;
+long	length;
     {
-	Reg1 dbufbuf **h, *d;
-	Reg2 long int nbr, off;
-	Reg3 int chunk;
+	Reg1	dbufbuf	**h, *d;
+	Reg2	int	nbr, off;
+	Reg3	int	chunk;
 
 	off = (dyn->offset + dyn->length) % DBUFSIZ;
 	nbr = (dyn->offset + dyn->length) / DBUFSIZ;
@@ -136,7 +157,7 @@ long length;
 		    }
 		if (chunk > length)
 			chunk = length;
-		bcopy(buf,d->data + off,chunk);
+		bcopy(buf, d->data + off, chunk);
 		length -= chunk;
 		buf += chunk;
 		off = 0;
@@ -146,9 +167,9 @@ long length;
     }
 
 
-char *dbuf_map(dyn,length)
-dbuf *dyn;
-long *length;
+char	*dbuf_map(dyn,length)
+dbuf	*dyn;
+int	*length;
     {
 	if (dyn->head == NULL)
 	    {
@@ -195,11 +216,11 @@ dbuf	*dyn;
 char	*buf;
 long	length;
     {
-	long int moved = 0;
-	long int chunk;
-	char *b;
+	int	moved = 0;
+	int	chunk;
+	char	*b;
 
-	while (length > 0 && (b = dbuf_map(dyn,&chunk)) != NULL)
+	while (length > 0 && (b = dbuf_map(dyn, &chunk)) != NULL)
 	    {
 		if (chunk > length)
 			chunk = length;

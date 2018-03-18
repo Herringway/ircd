@@ -17,18 +17,6 @@
  *   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
-/*
- * $Id: common.h,v 6.1 1991/07/04 21:04:25 gruner stable gruner $
- *
- * $Log: common.h,v $
- * Revision 6.1  1991/07/04  21:04:25  gruner
- * Revision 2.6.1 [released]
- *
- * Revision 6.0  1991/07/04  18:04:59  gruner
- * frozen beta revision 2.6.1
- *
- */
-
 #ifndef PROTO
 #if __STDC__
 #	define PROTO(x)	x
@@ -52,30 +40,35 @@
 #define FALSE (0)
 #define TRUE  (!FALSE)
 
-#if MIPS || pyr || apollo
+#if defined(MIPS) || defined(pyr) || defined(apollo)
 char *malloc(), *calloc();
 void free();
 #else
 #include <malloc.h>
 #endif
 
-#if NEED_INET_ADDR
+extern	int	matches PROTO((char *, char *)), mycmp PROTO((char *, char *));
+
+#ifdef NEED_STRTOKEN
+extern	char	*strtok PROTO((char *, char *));
+extern	char	*strtoken PROTO((char **, char *, char *));
+#endif
+#ifdef NEED_INET_ADDR
 extern unsigned long inet_addr PROTO((char *));
 #endif
 
-#if NEED_INET_NTOA || NEED_INET_NETOF
+#if defined(NEED_INET_NTOA) || defined(NEED_INET_NETOF)
 #include <netinet/in.h>
 #endif
 
-#if NEED_INET_NTOA
+#ifdef NEED_INET_NTOA
 extern char *inet_ntoa PROTO((struct in_addr));
 #endif
 
-#if NEED_INET_NETOF
+#ifdef NEED_INET_NETOF
 extern int inet_netof PROTO((struct in_addr));
 #endif
 
-extern long time();
 extern char *myctime PROTO((long));
 extern char *strtoken PROTO((char **, char *, char *));
 
@@ -88,15 +81,15 @@ extern char *strtoken PROTO((char **, char *, char *));
 
 #ifdef USE_OUR_CTYPE
 
-extern char tolowertab[];
+extern unsigned char tolowertab[];
 
 #undef tolower
-#define tolower(c) (tolowertab[1+(c)])
+#define tolower(c) (tolowertab[(u_char)(c)])
 
-extern char touppertab[];
+extern unsigned char touppertab[];
 
 #undef toupper
-#define toupper(c) (touppertab[1+(c)])
+#define toupper(c) (touppertab[(u_char)(c)])
 
 #undef isalpha
 #undef isdigit
@@ -109,7 +102,7 @@ extern char touppertab[];
 #undef isupper
 #undef isspace
 
-extern char char_atribs[];
+extern unsigned char char_atribs[];
 
 #define PRINT 1
 #define CNTRL 2
@@ -118,16 +111,16 @@ extern char char_atribs[];
 #define DIGIT 16
 #define SPACE 32
 
-#define isalpha(c) (char_atribs[1+(c)]&ALPHA)
-#define isspace(c) (char_atribs[1+(c)]&SPACE)
-#define islower(c) ((char_atribs[1+(c)]&ALPHA) && ((c) > 0x5f))
-#define isupper(c) ((char_atribs[1+(c)]&ALPHA) && ((c) < 0x60))
-#define isdigit(c) (char_atribs[1+(c)]&DIGIT)
-#define isalnum(c) (char_atribs[1+(c)]&(DIGIT|ALPHA))
-#define isprint(c) (char_atribs[1+(c)]&PRINT)
-#define isascii(c) ((c) >= 0 && (c) <= 0x7f)
-#define isgraph(c) ((char_atribs[1+(c)]&PRINT) && ((c) != 0x32))
-#define ispunct(c) (!(char_atribs[1+(c)]&(CNTRL|ALPHA|DIGIT)))
+#define isalpha(c) (char_atribs[(u_char)(c)]&ALPHA)
+#define isspace(c) (char_atribs[(u_char)(c)]&SPACE)
+#define islower(c) ((char_atribs[(u_char)(c)]&ALPHA) && ((u_char)(c) > 0x5f))
+#define isupper(c) ((char_atribs[(u_char)(c)]&ALPHA) && ((u_char)(c) < 0x60))
+#define isdigit(c) (char_atribs[(u_char)(c)]&DIGIT)
+#define isalnum(c) (char_atribs[(u_char)(c)]&(DIGIT|ALPHA))
+#define isprint(c) (char_atribs[(u_char)(c)]&PRINT)
+#define isascii(c) ((u_char)(c) >= 0 && (u_char)(c) <= 0x7f)
+#define isgraph(c) ((char_atribs[(u_char)(c)]&PRINT) && ((u_char)(c) != 0x32))
+#define ispunct(c) (!(char_atribs[(u_char)(c)]&(CNTRL|ALPHA|DIGIT)))
 #else
 #include <ctype.h>
 #endif
