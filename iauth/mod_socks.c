@@ -201,19 +201,19 @@ AnInstance *self;
 	tmpbuf[0] = txtbuf[0] = '\0';
 	if (strstr(self->opt, "log"))
 	    {
-		mydata->options = OPT_LOG;
+		mydata->options |= OPT_LOG;
 		strcat(tmpbuf, ",log");
 		strcat(txtbuf, ", Log");
 	    }
 	if (strstr(self->opt, "reject"))
 	    {
-		mydata->options = OPT_DENY;
+		mydata->options |= OPT_DENY;
 		strcat(tmpbuf, ",reject");
 		strcat(txtbuf, ", Reject");
 	    }
 	if (strstr(self->opt, "paranoid"))
 	    {
-		mydata->options = OPT_PARANOID;
+		mydata->options |= OPT_PARANOID;
 		strcat(tmpbuf, ",paranoid");
 		strcat(txtbuf, ", Paranoid");
 	    }
